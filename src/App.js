@@ -1,6 +1,18 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
+
+// ----------------------
+// Lernsets mit RAW URLs
+// ----------------------
+const SETS = {
+  "neuste": "https://raw.githubusercontent.com/Maksimuiu/voka/main/vokables",
+  "Unit 1": "https://raw.githubusercontent.com/Maksimuiu/voka/main/unit1",
+  "Unit 2": "https://raw.githubusercontent.com/Maksimuiu/voka/main/unit2",
+  "Unit 3": "https://raw.githubusercontent.com/Maksimuiu/voka/main/unit3",
+  "Alle":  "https://raw.githubusercontent.com/Maksimuiu/voka/main/vokables"
+};
 
 export default function App() {
   const [username, setUsername] = useState("");
@@ -9,54 +21,73 @@ export default function App() {
   const [currentCard, setCurrentCard] = useState(null);
   const [answer, setAnswer] = useState("");
   const [score, setScore] = useState(0);
+  const [displayScore, setDisplayScore] = useState(0);
   const [feedback, setFeedback] = useState("");
   const [done, setDone] = useState(false);
   const [started, setStarted] = useState(false);
   const [showGermanFirst, setShowGermanFirst] = useState(true);
+  const [selectedSet, setSelectedSet] = useState("neuste");
+  const [showEmoji, setShowEmoji] = useState(false);
+  const [languageLabel, setLanguageLabel] = useState("");
+  const [titleClicks, setTitleClicks] = useState(0);
+  const [pendingBonusPoints, setPendingBonusPoints] = useState(0); // Punkte warten auf nächstes Ergebnis
 
-  const RAW_URL = "https://raw.githubusercontent.com/Maksimuiu/voka/refs/heads/main/vokables";
-
-  const addGitHubVocab = async () => {
-    try {
-      const res = await fetch(RAW_URL);
-      const text = await res.text();
-      const imported = text
-        .split("\n")
-        .map(line => {
-          const [first, second] = line.split(",");
-          return { de: first?.trim(), en: second?.trim() };
-        })
-        .filter(v => v.de && v.en);
-
-      const userVocab = vocabText
-        .split("\n")
-        .map(line => {
-          const [first, second] = line.split(",");
-          return { de: first?.trim(), en: second?.trim() };
-        })
-        .filter(v => v.de && v.en);
-
-      const combined = [...userVocab, ...imported].slice(0, 15);
-      setVocabText(combined.map(v => `${v.de},${v.en}`).join("\n"));
-    } catch (err) {
-      alert("Fehler beim Laden der Vokabeln!");
-      console.error(err);
-    }
-  };
-
-  const startSession = () => {
-    const list = vocabText
+  // ----------------------
+  // Vokabelparser
+  // ----------------------
+  const parseVocab = text =>
+    text
       .split("\n")
       .map(line => {
         const [de, en] = line.split(",");
         return { de: de?.trim(), en: en?.trim() };
       })
-      .filter(v => v.de && v.en)
-      .slice(0, 15);
+      .filter(v => v.de && v.en);
+
+  const normalize = str => str.trim();
+
+  // ----------------------
+  // GitHub Vokabel hinzufügen
+  // ----------------------
+  const addGitHubVocab = async () => {
+    try {
+      const url = SETS[selectedSet];
+      const res = await fetch(url);
+      const text = await res.text();
+      const imported = parseVocab(text);
+      const userVocab = parseVocab(vocabText);
+      const combined = [...userVocab, ...imported].slice(0, 15);
+      setVocabText(combined.map(v => `${v.de},${v.en}`).join("\n"));
+    } catch {
+      alert("Fehler beim Import!");
+    }
+  };
+
+  // ----------------------
+  // Mix aus Sets
+  // ----------------------
+  const mixSetsRandomly = async (setNames, amountPerSet = 5) => {
+    let result = [];
+    for (let name of setNames) {
+      const res = await fetch(SETS[name]);
+      const text = await res.text();
+      const words = parseVocab(text);
+      const random = words.sort(() => 0.5 - Math.random()).slice(0, amountPerSet);
+      result.push(...random);
+    }
+    return result;
+  };
+
+  // ----------------------
+  // Session starten
+  // ----------------------
+  const startSession = list => {
     setVocabList(list);
     setScore(0);
+    setDisplayScore(0);
     setDone(false);
     setStarted(true);
+    setShowEmoji(false);
     nextCard(list);
   };
 
@@ -65,98 +96,164 @@ export default function App() {
     if (remaining.length === 0) {
       setDone(true);
       setCurrentCard(null);
+      setShowEmoji(true);
+      setDisplayScore(0);
       return;
     }
     const random = remaining[Math.floor(Math.random() * remaining.length)];
+    const germanFirst = Math.random() > 0.5;
+    setShowGermanFirst(germanFirst);
+    setLanguageLabel(germanFirst ? "Deutsch → Englisch" : "Englisch → Deutsch");
     setCurrentCard(random);
     setAnswer("");
     setFeedback("");
-    setShowGermanFirst(Math.random() >= 0.5);
   };
 
+  // ----------------------
+  // Antwort prüfen
+  // ----------------------
   const checkAnswer = () => {
     if (!currentCard) return;
     const correctAnswer = showGermanFirst ? currentCard.en : currentCard.de;
-    const correct = correctAnswer.toLowerCase() === answer.toLowerCase();
-    setFeedback(correct ? "✅ richtig!" : `❌ richtig: ${correctAnswer}`);
-    if (correct) setScore(prev => prev + 1);
+    const isCorrect = normalize(correctAnswer) === normalize(answer);
 
-    const updatedList = vocabList.map(v =>
-      v.de === currentCard.de ? { ...v, answered: true, userAnswer: answer, correct } : v
+    setFeedback(isCorrect ? "✅ richtig!" : `❌ richtig: ${correctAnswer}`);
+
+    let addedScore = isCorrect ? 1 : 0;
+
+    // Bonuspunkte vom Easter Egg oder weitere Klicks hinzufügen
+    if (pendingBonusPoints > 0) {
+      addedScore += pendingBonusPoints;
+      setPendingBonusPoints(0); // einmal pro Ergebnis
+    }
+
+    if (addedScore > 0) setScore(prev => prev + addedScore);
+
+    const updated = vocabList.map(v =>
+      v.de === currentCard.de ? { ...v, answered: true, correct: isCorrect, userAnswer: answer } : v
     );
-    setVocabList(updatedList);
 
-    setTimeout(() => nextCard(updatedList), 1000);
+    setVocabList(updated);
+    setTimeout(() => nextCard(updated), 900);
+  };
+
+  // ----------------------
+  // Punkte hochzählen
+  // ----------------------
+  useEffect(() => {
+    if (displayScore < score) {
+      const timer = setTimeout(() => setDisplayScore(prev => prev + 1), 300);
+      return () => clearTimeout(timer);
+    }
+  }, [displayScore, score]);
+
+  // ----------------------
+  // Easter Egg: Klick auf Überschrift
+  // ----------------------
+  const handleTitleClick = () => {
+    const newClicks = titleClicks + 1;
+    setTitleClicks(newClicks);
+
+    if (newClicks === 12) {
+      setPendingBonusPoints(10); // beim 12. Klick gibt es 10 Punkte beim nächsten Ergebnis
+    } else if (newClicks > 12) {
+      setPendingBonusPoints(prev => prev + 1); // danach 1 Punkt pro Klick beim nächsten Ergebnis
+    }
   };
 
   const getEmoji = () => (score < 5 ? "😢" : score < 10 ? "😐" : "😄");
 
+  // ----------------------
+  // PDF Export
+  // ----------------------
   const exportPDF = async () => {
     const element = document.getElementById("flashcards");
     const canvas = await html2canvas(element);
     const imgData = canvas.toDataURL("image/png");
     const pdf = new jsPDF();
-    pdf.addImage(imgData, "PNG", 10, 10, 180, 160);
+    pdf.addImage(imgData, "PNG", 10, 10, 180, 180);
     pdf.save("flashcards.pdf");
   };
 
+  const reset = () => {
+    setStarted(false);
+    setDone(false);
+    setVocabList([]);
+    setCurrentCard(null);
+    setAnswer("");
+    setFeedback("");
+    setScore(0);
+    setDisplayScore(0);
+    setShowEmoji(false);
+    setLanguageLabel("");
+    setTitleClicks(0);
+    setPendingBonusPoints(0);
+  };
+
+  // ----------------------
+  // UI
+  // ----------------------
   return (
     <div style={styles.container}>
+      <h2 onClick={handleTitleClick} style={{ cursor: "pointer" }}>Vokabeltrainer</h2>
+
       {!started && (
         <div style={styles.box}>
-          <h2>Vokabeltrainer starten</h2>
-          <input
-            placeholder="Benutzername"
-            value={username}
-            onChange={e => setUsername(e.target.value)}
-            style={styles.input}
-          /><br />
-          <textarea
-            placeholder="Vokabeln eintragen (DE,EN je Zeile)"
-            value={vocabText}
-            onChange={e => setVocabText(e.target.value)}
-            rows={10}
-            style={styles.textarea}
-          /><br />
-          <button onClick={addGitHubVocab} style={styles.button}>
-            Neueste Vokabeln hinzufügen
+          <input value={username} onChange={e => setUsername(e.target.value)} placeholder="Benutzername" style={styles.input} />
+          <select value={selectedSet} onChange={e => setSelectedSet(e.target.value)} style={styles.input}>
+            {Object.keys(SETS).map(key => (<option key={key} value={key}>{key}</option>))}
+          </select>
+          <button onClick={addGitHubVocab} style={styles.buttonSmall}>Ausgewählte Vokabeln hinzufügen</button>
+          <button
+            onClick={async () => {
+              const mixed = await mixSetsRandomly(["neuste"], 5);
+              setVocabText(mixed.map(v => `${v.de},${v.en}`).join("\n"));
+              startSession(mixed.slice(0, 15));
+            }}
+            style={styles.buttonSmall}
+          >
+            Mix aus Sets
           </button>
-          <button onClick={startSession} style={{...styles.button, marginLeft: 10}}>
-            Start
-          </button>
+          <textarea value={vocabText} rows={8} onChange={e => setVocabText(e.target.value)} placeholder="Deutsch,Englisch" style={styles.textarea} />
+          <button onClick={() => startSession(parseVocab(vocabText).slice(0, 15))} style={styles.button}>Start</button>
         </div>
       )}
 
-      {started && currentCard && (
-        <div style={styles.box}>
-          <h3>{showGermanFirst ? "DE:" : "EN:"} {showGermanFirst ? currentCard.de : currentCard.en}</h3>
-          <input
-            value={answer}
-            onChange={e => setAnswer(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && checkAnswer()}
-            style={styles.input}
-          />
-          <button onClick={checkAnswer} style={styles.button}>Überprüfen</button>
-          <div style={{marginTop:10}}>{feedback}</div>
-          <div style={{marginTop:5}}>Punktzahl: {score} / {vocabList.length}</div>
-        </div>
+      {started && currentCard && !done && (
+        <AnimatePresence exitBeforeEnter>
+          <motion.div key={currentCard.de} style={styles.box} initial={{ y: -300, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 300, opacity: 0 }} transition={{ type: "spring", stiffness: 300, damping: 30 }}>
+            <h4>{languageLabel}</h4>
+            <h3>{showGermanFirst ? currentCard.de : currentCard.en}</h3>
+            <input value={answer} onChange={e => setAnswer(e.target.value)} onKeyDown={e => e.key === "Enter" && checkAnswer()} style={styles.input} />
+            <button onClick={checkAnswer} style={styles.button}>OK</button>
+            <p>{feedback}</p>
+            <motion.p style={{ fontSize: '20px', fontWeight: 'bold' }} key={displayScore} initial={{ y: -50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} transition={{ duration: 0.5 }}>Punkte: {displayScore}</motion.p>
+          </motion.div>
+        </AnimatePresence>
       )}
 
       {done && (
         <div style={styles.box}>
-          <h2>Fertig! {username}</h2>
-          <h3>Punkte: {score} / {vocabList.length} {getEmoji()}</h3>
-          <div id="flashcards" style={{marginTop:10}}>
-            {vocabList.map((v, idx) => (
-              <div key={idx} style={styles.card}>
-                <b>DE:</b> {v.de} <br />
-                <b>EN:</b> {v.en} <br />
-                <b>Deine Antwort:</b> {v.userAnswer} ({v.correct ? "✅" : "❌"})
+          <AnimatePresence>
+            {showEmoji && (
+              <motion.div initial={{ scale: 5, opacity: 1 }} animate={{ scale: 1, opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 1 }} style={{ fontSize: '80px', textAlign: 'center', margin: '10px auto' }}>
+                {getEmoji()}
+                <motion.p style={{ fontSize: '32px', fontWeight: 'bold', marginTop: '10px' }} initial={{ y: -50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 1 }}>Punkte: {displayScore}</motion.p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div id="flashcards" style={styles.flashcards}>
+            {vocabList.map((v, i) => (
+              <div key={i} style={styles.card}>
+                <b>DE:</b> {v.de}<br />
+                <b>EN:</b> {v.en}<br />
+                <b>Antwort:</b> {v.userAnswer} {v.correct ? "✅" : "❌"}
               </div>
             ))}
           </div>
-          <button onClick={exportPDF} style={styles.button}>Als PDF exportieren</button>
-          <button onClick={() => setStarted(false)} style={{...styles.button, marginLeft: 10}}>Neue Runde starten</button>
+          <button onClick={exportPDF} style={styles.buttonSmall}>PDF</button>
+          <button onClick={reset} style={styles.buttonSmall}>Neue Runde</button>
         </div>
       )}
     </div>
@@ -164,47 +261,12 @@ export default function App() {
 }
 
 const styles = {
-  container: {
-    fontFamily: "Arial, sans-serif",
-    textAlign: "center",
-    margin: "20px"
-  },
-  box: {
-    display: "inline-block",
-    padding: "20px",
-    borderRadius: "10px",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-    backgroundColor: "#f9f9f9"
-  },
-  input: {
-    width: "250px",
-    padding: "10px",
-    borderRadius: "5px",
-    border: "1px solid #ccc",
-    marginBottom: "10px"
-  },
-  textarea: {
-    width: "250px",
-    padding: "10px",
-    borderRadius: "5px",
-    border: "1px solid #ccc",
-    marginBottom: "10px"
-  },
-  button: {
-    padding: "10px 20px",
-    borderRadius: "5px",
-    border: "none",
-    backgroundColor: "#4f46e5",
-    color: "white",
-    cursor: "pointer",
-    marginTop: "10px"
-  },
-  card: {
-    border: "1px solid #ccc",
-    borderRadius: "8px",
-    padding: "10px",
-    marginBottom: "5px",
-    backgroundColor: "white",
-    boxShadow: "0 2px 6px rgba(0,0,0,0.1)"
-  }
+  container: { fontFamily: "Arial", textAlign: "center", marginTop: 20 },
+  box: { width: "300px", padding: "15px", margin: "auto", borderRadius: "10px", background: "#f2f2f2", boxShadow: "0 3px 10px rgba(0,0,0,0.2)" },
+  input: { width: "260px", padding: "10px", marginBottom: "10px", borderRadius: "5px", border: "1px solid #aaa", fontSize: "14px" },
+  textarea: { width: "260px", padding: "10px", borderRadius: "5px", border: "1px solid #aaa", fontSize: "14px", marginBottom: "10px", resize: "none" },
+  button: { width: "260px", padding: "10px", marginTop: "5px", borderRadius: "5px", border: "none", background: "#4a6eff", color: "white", cursor: "pointer" },
+  buttonSmall: { width: "120px", padding: "8px", margin: "5px", borderRadius: "5px", border: "none", background: "#4a6eff", color: "white", cursor: "pointer" },
+  flashcards: { maxHeight: "220px", overflowY: "auto", marginBottom: "10px" },
+  card: { padding: "8px", marginBottom: "6px", background: "white", borderRadius: "5px", boxShadow: "0 1px 4px rgba(0,0,0,0.15)" }
 };
