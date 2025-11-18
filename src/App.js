@@ -7,11 +7,9 @@ import html2canvas from "html2canvas";
 // Lernsets mit RAW URLs
 // ----------------------
 const SETS = {
-  "neuste": "https://raw.githubusercontent.com/Maksimuiu/voka/main/vokables",
-  "Unit 1": "https://raw.githubusercontent.com/Maksimuiu/voka/main/unit1",
-  "Unit 2": "https://raw.githubusercontent.com/Maksimuiu/voka/main/unit2",
-  "Unit 3": "https://raw.githubusercontent.com/Maksimuiu/voka/main/unit3",
-  "Alle":  "https://raw.githubusercontent.com/Maksimuiu/voka/main/vokables"
+  "Random": "random",
+  "Unit 1": "https://raw.githubusercontent.com/Maksimuiu/voka/refs/heads/main/Unit1",
+  "Unit 2": "https://raw.githubusercontent.com/Maksimuiu/voka/refs/heads/main/Unit2"
 };
 
 export default function App() {
@@ -26,11 +24,11 @@ export default function App() {
   const [done, setDone] = useState(false);
   const [started, setStarted] = useState(false);
   const [showGermanFirst, setShowGermanFirst] = useState(true);
-  const [selectedSet, setSelectedSet] = useState("neuste");
+  const [selectedSet, setSelectedSet] = useState("Unit 1");
   const [showEmoji, setShowEmoji] = useState(false);
   const [languageLabel, setLanguageLabel] = useState("");
   const [titleClicks, setTitleClicks] = useState(0);
-  const [pendingBonusPoints, setPendingBonusPoints] = useState(0); // Punkte warten auf nächstes Ergebnis
+  const [pendingBonusPoints, setPendingBonusPoints] = useState(0);
 
   // ----------------------
   // Vokabelparser
@@ -52,10 +50,19 @@ export default function App() {
   const addGitHubVocab = async () => {
     try {
       const url = SETS[selectedSet];
+
+      // random → 20 zufällige Wörter aus allen Sets
+      if (url === "random") {
+        const randomWords = await mixSetsRandomly(["random"], 20);
+        setVocabText(randomWords.map(v => `${v.de},${v.en}`).join("\n"));
+        return;
+      }
+
       const res = await fetch(url);
       const text = await res.text();
       const imported = parseVocab(text);
       const userVocab = parseVocab(vocabText);
+
       const combined = [...userVocab, ...imported].slice(0, 15);
       setVocabText(combined.map(v => `${v.de},${v.en}`).join("\n"));
     } catch {
@@ -64,10 +71,17 @@ export default function App() {
   };
 
   // ----------------------
-  // Mix aus Sets
+  // Mix aus Sets – erweitert mit RANDOM Funktion
   // ----------------------
   const mixSetsRandomly = async (setNames, amountPerSet = 5) => {
+    // Wenn random gewählt → nimm alle RAW-Sets außer random
+    if (setNames.includes("random")) {
+      setNames = Object.keys(SETS).filter(s => SETS[s] !== "random");
+      amountPerSet = Math.ceil(20 / setNames.length);
+    }
+
     let result = [];
+
     for (let name of setNames) {
       const res = await fetch(SETS[name]);
       const text = await res.text();
@@ -75,7 +89,8 @@ export default function App() {
       const random = words.sort(() => 0.5 - Math.random()).slice(0, amountPerSet);
       result.push(...random);
     }
-    return result;
+
+    return result.sort(() => 0.5 - Math.random()).slice(0, 20);
   };
 
   // ----------------------
@@ -121,16 +136,17 @@ export default function App() {
 
     let addedScore = isCorrect ? 1 : 0;
 
-    // Bonuspunkte vom Easter Egg oder weitere Klicks hinzufügen
     if (pendingBonusPoints > 0) {
       addedScore += pendingBonusPoints;
-      setPendingBonusPoints(0); // einmal pro Ergebnis
+      setPendingBonusPoints(0);
     }
 
     if (addedScore > 0) setScore(prev => prev + addedScore);
 
     const updated = vocabList.map(v =>
-      v.de === currentCard.de ? { ...v, answered: true, correct: isCorrect, userAnswer: answer } : v
+      v.de === currentCard.de
+        ? { ...v, answered: true, correct: isCorrect, userAnswer: answer }
+        : v
     );
 
     setVocabList(updated);
@@ -138,7 +154,7 @@ export default function App() {
   };
 
   // ----------------------
-  // Punkte hochzählen
+  // Punkte hochzählen animieren
   // ----------------------
   useEffect(() => {
     if (displayScore < score) {
@@ -148,16 +164,16 @@ export default function App() {
   }, [displayScore, score]);
 
   // ----------------------
-  // Easter Egg: Klick auf Überschrift
+  // Easter Egg
   // ----------------------
   const handleTitleClick = () => {
     const newClicks = titleClicks + 1;
     setTitleClicks(newClicks);
 
     if (newClicks === 12) {
-      setPendingBonusPoints(10); // beim 12. Klick gibt es 10 Punkte beim nächsten Ergebnis
+      setPendingBonusPoints(10);
     } else if (newClicks > 12) {
-      setPendingBonusPoints(prev => prev + 1); // danach 1 Punkt pro Klick beim nächsten Ergebnis
+      setPendingBonusPoints(prev => prev + 1);
     }
   };
 
@@ -200,13 +216,18 @@ export default function App() {
       {!started && (
         <div style={styles.box}>
           <input value={username} onChange={e => setUsername(e.target.value)} placeholder="Benutzername" style={styles.input} />
+
           <select value={selectedSet} onChange={e => setSelectedSet(e.target.value)} style={styles.input}>
-            {Object.keys(SETS).map(key => (<option key={key} value={key}>{key}</option>))}
+            {Object.keys(SETS).map(key => (
+              <option key={key} value={key}>{key}</option>
+            ))}
           </select>
+
           <button onClick={addGitHubVocab} style={styles.buttonSmall}>Ausgewählte Vokabeln hinzufügen</button>
+
           <button
             onClick={async () => {
-              const mixed = await mixSetsRandomly(["neuste"], 5);
+              const mixed = await mixSetsRandomly([selectedSet], 5);
               setVocabText(mixed.map(v => `${v.de},${v.en}`).join("\n"));
               startSession(mixed.slice(0, 15));
             }}
@@ -214,20 +235,47 @@ export default function App() {
           >
             Mix aus Sets
           </button>
+
           <textarea value={vocabText} rows={8} onChange={e => setVocabText(e.target.value)} placeholder="Deutsch,Englisch" style={styles.textarea} />
+
           <button onClick={() => startSession(parseVocab(vocabText).slice(0, 15))} style={styles.button}>Start</button>
         </div>
       )}
 
       {started && currentCard && !done && (
         <AnimatePresence exitBeforeEnter>
-          <motion.div key={currentCard.de} style={styles.box} initial={{ y: -300, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 300, opacity: 0 }} transition={{ type: "spring", stiffness: 300, damping: 30 }}>
+          <motion.div
+            key={currentCard.de}
+            style={styles.box}
+            initial={{ y: -300, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 300, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+          >
             <h4>{languageLabel}</h4>
             <h3>{showGermanFirst ? currentCard.de : currentCard.en}</h3>
-            <input value={answer} onChange={e => setAnswer(e.target.value)} onKeyDown={e => e.key === "Enter" && checkAnswer()} style={styles.input} />
+
+            <input
+              value={answer}
+              onChange={e => setAnswer(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && checkAnswer()}
+              style={styles.input}
+            />
+
             <button onClick={checkAnswer} style={styles.button}>OK</button>
+
             <p>{feedback}</p>
-            <motion.p style={{ fontSize: '20px', fontWeight: 'bold' }} key={displayScore} initial={{ y: -50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} transition={{ duration: 0.5 }}>Punkte: {displayScore}</motion.p>
+
+            <motion.p
+              style={{ fontSize: "20px", fontWeight: "bold" }}
+              key={displayScore}
+              initial={{ y: -50, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 50, opacity: 0 }}
+              transition={{ duration: 0.5 }}
+            >
+              Punkte: {displayScore}
+            </motion.p>
           </motion.div>
         </AnimatePresence>
       )}
@@ -236,9 +284,23 @@ export default function App() {
         <div style={styles.box}>
           <AnimatePresence>
             {showEmoji && (
-              <motion.div initial={{ scale: 5, opacity: 1 }} animate={{ scale: 1, opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 1 }} style={{ fontSize: '80px', textAlign: 'center', margin: '10px auto' }}>
+              <motion.div
+                initial={{ scale: 5, opacity: 1 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 1 }}
+                style={{ fontSize: "80px", textAlign: "center", margin: "10px auto" }}
+              >
                 {getEmoji()}
-                <motion.p style={{ fontSize: '32px', fontWeight: 'bold', marginTop: '10px' }} initial={{ y: -50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 1 }}>Punkte: {displayScore}</motion.p>
+
+                <motion.p
+                  style={{ fontSize: "32px", fontWeight: "bold", marginTop: "10px" }}
+                  initial={{ y: -50, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ duration: 1 }}
+                >
+                  Punkte: {displayScore}
+                </motion.p>
               </motion.div>
             )}
           </AnimatePresence>
@@ -252,6 +314,7 @@ export default function App() {
               </div>
             ))}
           </div>
+
           <button onClick={exportPDF} style={styles.buttonSmall}>PDF</button>
           <button onClick={reset} style={styles.buttonSmall}>Neue Runde</button>
         </div>
