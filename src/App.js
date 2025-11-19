@@ -8,14 +8,14 @@ import html2canvas from "html2canvas";
 // ----------------------
 const SETS = {
   "Random": "random",
-  "Unit 1": "https://raw.githubusercontent.com/Maksimuiu/voka/refs/heads/main/Unit1",
-  "Unit 2": "https://raw.githubusercontent.com/Maksimuiu/voka/refs/heads/main/Unit2"
+  "Unit 2": "https://raw.githubusercontent.com/Maksimuiu/voka/refs/heads/main/Unit2",
+  "2b": "https://raw.githubusercontent.com/Maksimuiu/voka/refs/heads/main/2b"
 };
 
 export default function App() {
   const [username, setUsername] = useState("");
   const [vocabText, setVocabText] = useState("");
-  const [vocabList, setVocabList] = useState([]);
+  const [vocabList, setVocabList] = useState([]); 
   const [currentCard, setCurrentCard] = useState(null);
   const [answer, setAnswer] = useState("");
   const [score, setScore] = useState(0);
