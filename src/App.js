@@ -7,9 +7,10 @@ import html2canvas from "html2canvas";
 // Lernsets mit RAW URLs
 // ----------------------
 const SETS = {
-  "Random": "random",
+  
   "Unit 2": "https://raw.githubusercontent.com/Maksimuiu/voka/refs/heads/main/Unit2",
-  "2b": "https://raw.githubusercontent.com/Maksimuiu/voka/refs/heads/main/2b"
+  "2b": "https://raw.githubusercontent.com/Maksimuiu/voka/refs/heads/main/2b",
+  "Random": "random"
 };
 
 export default function App() {
