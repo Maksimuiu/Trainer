@@ -4,19 +4,18 @@ import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
 // ----------------------
-// Lernsets mit RAW URLs
+// Lernsets mit KORREKTEN RAW URLs
 // ----------------------
 const SETS = {
-  
-  "Unit 2": "https://raw.githubusercontent.com/Maksimuiu/voka/refs/heads/main/Unit2",
-  "2b": "https://raw.githubusercontent.com/Maksimuiu/voka/refs/heads/main/2b",
+  "Unit 2": "https://raw.githubusercontent.com/Maksimuiu/voka/main/Unit2",
+  "2b": "https://raw.githubusercontent.com/Maksimuiu/voka/main/2b",
   "Random": "random"
 };
 
 export default function App() {
   const [username, setUsername] = useState("");
   const [vocabText, setVocabText] = useState("");
-  const [vocabList, setVocabList] = useState([]); 
+  const [vocabList, setVocabList] = useState([]);
   const [currentCard, setCurrentCard] = useState(null);
   const [answer, setAnswer] = useState("");
   const [score, setScore] = useState(0);
@@ -25,59 +24,67 @@ export default function App() {
   const [done, setDone] = useState(false);
   const [started, setStarted] = useState(false);
   const [showGermanFirst, setShowGermanFirst] = useState(true);
-  const [selectedSet, setSelectedSet] = useState("Unit 1");
+  const [selectedSet, setSelectedSet] = useState("Unit 2");
   const [showEmoji, setShowEmoji] = useState(false);
   const [languageLabel, setLanguageLabel] = useState("");
   const [titleClicks, setTitleClicks] = useState(0);
   const [pendingBonusPoints, setPendingBonusPoints] = useState(0);
 
   // ----------------------
-  // Vokabelparser
+  // ROBUSTER VOKABEL-PARSER
   // ----------------------
-  const parseVocab = text =>
+  const parseVocab = (text) =>
     text
+      .replace(/^\uFEFF/, "") // BOM entfernen
       .split("\n")
-      .map(line => {
+      .map((line) => line.trim())
+      .filter((line) => line.includes(",")) // Nur gültige Zeilen
+      .map((line) => {
         const [de, en] = line.split(",");
         return { de: de?.trim(), en: en?.trim() };
       })
-      .filter(v => v.de && v.en);
+      .filter((v) => v.de && v.en);
 
-  const normalize = str => str.trim();
+  const normalize = (str) => str.trim();
 
   // ----------------------
-  // GitHub Vokabel hinzufügen
+  // GitHub Vokabel importieren
   // ----------------------
   const addGitHubVocab = async () => {
     try {
       const url = SETS[selectedSet];
 
-      // random → 20 zufällige Wörter aus allen Sets
       if (url === "random") {
         const randomWords = await mixSetsRandomly(["random"], 20);
-        setVocabText(randomWords.map(v => `${v.de},${v.en}`).join("\n"));
+        setVocabText(randomWords.map((v) => `${v.de},${v.en}`).join("\n"));
         return;
       }
 
       const res = await fetch(url);
       const text = await res.text();
+
+      // FALL: HTML statt Vokabeln? -> Fehler
+      if (text.startsWith("<!DOCTYPE") || text.startsWith("<meta")) {
+        alert("Fehler: Die Datei wurde nicht als RAW geladen!");
+        return;
+      }
+
       const imported = parseVocab(text);
       const userVocab = parseVocab(vocabText);
 
       const combined = [...userVocab, ...imported].slice(0, 15);
-      setVocabText(combined.map(v => `${v.de},${v.en}`).join("\n"));
-    } catch {
+      setVocabText(combined.map((v) => `${v.de},${v.en}`).join("\n"));
+    } catch (err) {
       alert("Fehler beim Import!");
     }
   };
 
   // ----------------------
-  // Mix aus Sets – erweitert mit RANDOM Funktion
+  // Mix aus Sets + RANDOM
   // ----------------------
   const mixSetsRandomly = async (setNames, amountPerSet = 5) => {
-    // Wenn random gewählt → nimm alle RAW-Sets außer random
     if (setNames.includes("random")) {
-      setNames = Object.keys(SETS).filter(s => SETS[s] !== "random");
+      setNames = Object.keys(SETS).filter((s) => SETS[s] !== "random");
       amountPerSet = Math.ceil(20 / setNames.length);
     }
 
@@ -97,7 +104,7 @@ export default function App() {
   // ----------------------
   // Session starten
   // ----------------------
-  const startSession = list => {
+  const startSession = (list) => {
     setVocabList(list);
     setScore(0);
     setDisplayScore(0);
@@ -108,7 +115,7 @@ export default function App() {
   };
 
   const nextCard = (list = vocabList) => {
-    const remaining = list.filter(v => !v.answered);
+    const remaining = list.filter((v) => !v.answered);
     if (remaining.length === 0) {
       setDone(true);
       setCurrentCard(null);
@@ -116,8 +123,10 @@ export default function App() {
       setDisplayScore(0);
       return;
     }
+
     const random = remaining[Math.floor(Math.random() * remaining.length)];
     const germanFirst = Math.random() > 0.5;
+
     setShowGermanFirst(germanFirst);
     setLanguageLabel(germanFirst ? "Deutsch → Englisch" : "Englisch → Deutsch");
     setCurrentCard(random);
@@ -142,24 +151,23 @@ export default function App() {
       setPendingBonusPoints(0);
     }
 
-    if (addedScore > 0) setScore(prev => prev + addedScore);
+    if (addedScore > 0) setScore((prev) => prev + addedScore);
 
-    const updated = vocabList.map(v =>
-      v.de === currentCard.de
-        ? { ...v, answered: true, correct: isCorrect, userAnswer: answer }
-        : v
+    const updated = vocabList.map((v) =>
+      v.de === currentCard.de ? { ...v, answered: true, correct: isCorrect, userAnswer: answer } : v
     );
 
     setVocabList(updated);
+
     setTimeout(() => nextCard(updated), 900);
   };
 
   // ----------------------
-  // Punkte hochzählen animieren
+  // Punktanimation
   // ----------------------
   useEffect(() => {
     if (displayScore < score) {
-      const timer = setTimeout(() => setDisplayScore(prev => prev + 1), 300);
+      const timer = setTimeout(() => setDisplayScore((prev) => prev + 1), 300);
       return () => clearTimeout(timer);
     }
   }, [displayScore, score]);
@@ -171,11 +179,8 @@ export default function App() {
     const newClicks = titleClicks + 1;
     setTitleClicks(newClicks);
 
-    if (newClicks === 12) {
-      setPendingBonusPoints(10);
-    } else if (newClicks > 12) {
-      setPendingBonusPoints(prev => prev + 1);
-    }
+    if (newClicks === 12) setPendingBonusPoints(10);
+    else if (newClicks > 12) setPendingBonusPoints((prev) => prev + 1);
   };
 
   const getEmoji = () => (score < 5 ? "😢" : score < 10 ? "😐" : "😄");
@@ -216,20 +221,20 @@ export default function App() {
 
       {!started && (
         <div style={styles.box}>
-          <input value={username} onChange={e => setUsername(e.target.value)} placeholder="Benutzername" style={styles.input} />
+          <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Benutzername" style={styles.input} />
 
-          <select value={selectedSet} onChange={e => setSelectedSet(e.target.value)} style={styles.input}>
-            {Object.keys(SETS).map(key => (
+          <select value={selectedSet} onChange={(e) => setSelectedSet(e.target.value)} style={styles.input}>
+            {Object.keys(SETS).map((key) => (
               <option key={key} value={key}>{key}</option>
             ))}
           </select>
 
-          <button onClick={addGitHubVocab} style={styles.buttonSmall}>Ausgewählte Vokabeln hinzufügen</button>
+          <button onClick={addGitHubVocab} style={styles.buttonSmall}>Ausgewählte Vokabeln importieren</button>
 
           <button
             onClick={async () => {
               const mixed = await mixSetsRandomly([selectedSet], 5);
-              setVocabText(mixed.map(v => `${v.de},${v.en}`).join("\n"));
+              setVocabText(mixed.map((v) => `${v.de},${v.en}`).join("\n"));
               startSession(mixed.slice(0, 15));
             }}
             style={styles.buttonSmall}
@@ -237,9 +242,20 @@ export default function App() {
             Mix aus Sets
           </button>
 
-          <textarea value={vocabText} rows={8} onChange={e => setVocabText(e.target.value)} placeholder="Deutsch,Englisch" style={styles.textarea} />
+          <textarea
+            value={vocabText}
+            rows={8}
+            onChange={(e) => setVocabText(e.target.value)}
+            placeholder="Deutsch,Englisch"
+            style={styles.textarea}
+          />
 
-          <button onClick={() => startSession(parseVocab(vocabText).slice(0, 15))} style={styles.button}>Start</button>
+          <button
+            onClick={() => startSession(parseVocab(vocabText).slice(0, 15))}
+            style={styles.button}
+          >
+            Start
+          </button>
         </div>
       )}
 
@@ -258,13 +274,12 @@ export default function App() {
 
             <input
               value={answer}
-              onChange={e => setAnswer(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && checkAnswer()}
+              onChange={(e) => setAnswer(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && checkAnswer()}
               style={styles.input}
             />
 
             <button onClick={checkAnswer} style={styles.button}>OK</button>
-
             <p>{feedback}</p>
 
             <motion.p
@@ -324,13 +339,66 @@ export default function App() {
   );
 }
 
+// ----------------------
+// Styles
+// ----------------------
 const styles = {
   container: { fontFamily: "Arial", textAlign: "center", marginTop: 20 },
-  box: { width: "300px", padding: "15px", margin: "auto", borderRadius: "10px", background: "#f2f2f2", boxShadow: "0 3px 10px rgba(0,0,0,0.2)" },
-  input: { width: "260px", padding: "10px", marginBottom: "10px", borderRadius: "5px", border: "1px solid #aaa", fontSize: "14px" },
-  textarea: { width: "260px", padding: "10px", borderRadius: "5px", border: "1px solid #aaa", fontSize: "14px", marginBottom: "10px", resize: "none" },
-  button: { width: "260px", padding: "10px", marginTop: "5px", borderRadius: "5px", border: "none", background: "#4a6eff", color: "white", cursor: "pointer" },
-  buttonSmall: { width: "120px", padding: "8px", margin: "5px", borderRadius: "5px", border: "none", background: "#4a6eff", color: "white", cursor: "pointer" },
-  flashcards: { maxHeight: "220px", overflowY: "auto", marginBottom: "10px" },
-  card: { padding: "8px", marginBottom: "6px", background: "white", borderRadius: "5px", boxShadow: "0 1px 4px rgba(0,0,0,0.15)" }
+  box: {
+    width: "300px",
+    padding: "15px",
+    margin: "auto",
+    borderRadius: "10px",
+    background: "#f2f2f2",
+    boxShadow: "0 3px 10px rgba(0,0,0,0.2)"
+  },
+  input: {
+    width: "260px",
+    padding: "10px",
+    marginBottom: "10px",
+    borderRadius: "5px",
+    border: "1px solid #aaa",
+    fontSize: "14px"
+  },
+  textarea: {
+    width: "260px",
+    padding: "10px",
+    borderRadius: "5px",
+    border: "1px solid #aaa",
+    fontSize: "14px",
+    marginBottom: "10px",
+    resize: "none"
+  },
+  button: {
+    width: "260px",
+    padding: "10px",
+    marginTop: "5px",
+    borderRadius: "5px",
+    border: "none",
+    background: "#4a6eff",
+    color: "white",
+    cursor: "pointer"
+  },
+  buttonSmall: {
+    width: "120px",
+    padding: "8px",
+    margin: "5px",
+    borderRadius: "5px",
+    border: "none",
+    background: "#4a6eff",
+    color: "white",
+    cursor: "pointer"
+  },
+  flashcards: {
+    maxHeight: "220px",
+    overflowY: "auto",
+    marginBottom: "10px"
+  },
+  card: {
+    padding: "8px",
+    marginBottom: "6px",
+    background: "white",
+    borderRadius: "5px",
+    boxShadow: "0 1px 4px rgba(0,0,0,0.15)"
+  }
 };
