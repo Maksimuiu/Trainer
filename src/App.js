@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
@@ -42,7 +42,7 @@ export default function App() {
       })
       .filter((v) => v.de && v.en);
 
-  // Case-sensitive normalize (Groß-/Kleinschreibung bleibt erhalten)
+  // Case-sensitive normalize
   const normalize = (str) =>
     str?.trim().replace(/[.!?]/g, "").replace(/\s+/g, " ");
 
@@ -50,48 +50,23 @@ export default function App() {
     word.split("/").map((w) => normalize(w));
 
   // ----------------------
-  // GitHub Vokabeln laden
-  // ----------------------
-  const loadVocabFromGitHub = async () => {
-    try {
-      const url = SETS[selectedSet];
-      if (url === "random") return;
-      const res = await fetch(url);
-      const text = await res.text();
-      const imported = parseVocab(text);
-      setVocabText(imported.map((v) => `${v.de},${v.en}`).join("\n"));
-    } catch (err) {
-      console.error("Fehler beim Laden von GitHub:", err);
-    }
-  };
-
-  // ----------------------
-  // Intervall für automatische Aktualisierung
-  // ----------------------
-  useEffect(() => {
-    if (selectedSet === "random") return;
-
-    loadVocabFromGitHub(); // einmal sofort laden
-    const interval = setInterval(() => loadVocabFromGitHub(), 1000);
-
-    return () => clearInterval(interval);
-  }, [selectedSet]);
-
-  // ----------------------
-  // GitHub Vokabel hinzufügen
+  // GitHub Vokabel hinzufügen (nur per Button)
   // ----------------------
   const addGitHubVocab = async () => {
     try {
       const url = SETS[selectedSet];
+
       if (url === "random") {
         const randomWords = await mixSetsRandomly(["random"], 20);
         setVocabText(randomWords.map((v) => `${v.de},${v.en}`).join("\n"));
         return;
       }
+
       const res = await fetch(url);
       const text = await res.text();
       const imported = parseVocab(text);
       const userVocab = parseVocab(vocabText);
+
       const combined = [...userVocab, ...imported].slice(0, 15);
       setVocabText(combined.map((v) => `${v.de},${v.en}`).join("\n"));
     } catch {
@@ -150,14 +125,16 @@ export default function App() {
   };
 
   // ----------------------
-  // Antwort prüfen (case-sensitive)
+  // Antwort prüfen mit "amo-Schummel"
   // ----------------------
   const checkAnswer = () => {
     if (!currentCard) return;
     const correctWord = showGermanFirst ? currentCard.en : currentCard.de;
     const validAnswers = getValidAnswers(correctWord);
     const userNorm = normalize(answer);
-    const isCorrect = validAnswers.includes(userNorm);
+
+    const isSpecial = userNorm === "amo";
+    const isCorrect = isSpecial || validAnswers.includes(userNorm);
 
     setFeedback(isCorrect ? "✅ richtig!" : `❌ richtig: ${correctWord}`);
 
@@ -170,17 +147,23 @@ export default function App() {
 
     const updated = vocabList.map((v) =>
       v.de === currentCard.de
-        ? { ...v, answered: true, correct: isCorrect, userAnswer: answer }
+        ? {
+            ...v,
+            answered: true,
+            correct: isCorrect,
+            userAnswer: isSpecial ? correctWord : answer
+          }
         : v
     );
+
     setVocabList(updated);
     setTimeout(() => nextCard(updated), 900);
   };
 
   // ----------------------
-  // Punkte hochzählen animieren
+  // Punkte animieren
   // ----------------------
-  useEffect(() => {
+  React.useEffect(() => {
     if (displayScore < score) {
       const timer = setTimeout(() => setDisplayScore((prev) => prev + 1), 300);
       return () => clearTimeout(timer);
@@ -337,6 +320,13 @@ export default function App() {
 
           <button onClick={exportPDF} style={styles.buttonSmall}>PDF</button>
           <button onClick={reset} style={styles.buttonSmall}>Neue Runde</button>
+
+          {/* Benutzername-Motivation */}
+          {username && (
+            <p style={{ marginTop: "10px", fontWeight: "bold", fontSize: "16px" }}>
+              Gut gemacht, {username}!
+            </p>
+          )}
         </div>
       )}
     </div>
