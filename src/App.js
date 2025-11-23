@@ -175,6 +175,7 @@ export default function App() {
   const [multiplayerResultsVisible, setMultiplayerResultsVisible] = useState(false);
   const roundTimerRef = useRef(null);
 
+
   // teacher login
   const [isTeacher, setIsTeacher] = useState(false);
 
@@ -495,6 +496,7 @@ export default function App() {
     setIsHost(false);
     listenToLobby(id);
     setJoinLobbyId("");
+			  console.log("join lobby");
   };
 
   // listen to lobby changes
@@ -532,6 +534,7 @@ export default function App() {
         setLobbyId("");
         setPlayerId(null);
         setIsHost(false);
+				  console.log("lost lobby");
       }
 
       if (val && val.state === "finished") {
@@ -647,12 +650,19 @@ export default function App() {
         activePlayers.every(([, p]) => (p.answeredIndex ?? -1) >= idx);
 
       const now = Date.now();
+	  
 
-      if (allAnswered || (val.roundDeadline && now >= val.roundDeadline)) {
+	        console.log("monitorAdvanceConditions");
+
+
+      if (allAnswered || (val.roundDeadline && now >= (val.roundDeadline))) 
+	  {
         // only host should advance
-        if (val.hostId === playerId) {
+        if (val.hostId === playerId) 
+		{
           const nextIndex = idx + 1;
-          const total = (val.vocabList || []).length;
+          //const total = (val.vconst roundTimerRef = useRef(null);vocabList || []).length;
+		  const total = (val.vocabList || []).length;
           if (nextIndex >= total) {
             await update(lobbyRef, {
               state: "finished",
@@ -667,23 +677,59 @@ export default function App() {
             startRoundCountdown(newDeadline);
           }
         }
+						  	  console.log("isHost2: ", isHost);
+	  console.log("autoAdvance2: ", autoAdvance);
+	  console.log("lobbyId2: ", lobbyId);
       }
     });
   };
 
   // start local countdown
   const startRoundCountdown = (deadline) => {
-    if (roundTimerRef.current) clearInterval(roundTimerRef.current);
-    const tick = () => {
-      const left = Math.max(0, Math.round((deadline - Date.now()) / 1000));
-      setTimeLeft(left);
-      if (left <= 0 && roundTimerRef.current) {
-        clearInterval(roundTimerRef.current);
+  if (roundTimerRef.current) clearInterval(roundTimerRef.current);
+
+  const tick = async () => {
+    const left = Math.max(0, Math.round((deadline - Date.now()) / 1000));
+    setTimeLeft(left);
+
+    if (left <= 0) {
+		console.log("timer is 0");
+      clearInterval(roundTimerRef.current);
+
+      // ⬇️ NEU: Nur Host darf weiterschalten, wenn der Timer abläuft
+	  console.log("isHost: ", isHost);
+	  console.log("autoAdvance: ", autoAdvance);
+	  console.log("lobbyId: ", lobbyId);
+      if (isHost && autoAdvance && lobbyId) 
+	  {
+        const lobbyRef = ref(db, `lobbies/${lobbyId}`);
+        const snap = await get(lobbyRef);
+				console.log("check snap");
+        if (!snap.exists()) return;
+
+        const val = snap.val();
+        const idx = val.currentIndex ?? 0;
+        const total = (val.vocabList || []).length;
+        if (idx + 1 >= total) {
+					console.log("completed");
+          await update(lobbyRef, { state: "finished", roundDeadline: 0 });
+        } else {
+					console.log("next card");
+          const newDeadline = Date.now() + 15000;
+          await update(lobbyRef, {
+            currentIndex: idx + 1,
+            roundDeadline: newDeadline
+          });
+		              startRoundCountdown(newDeadline);
+        }
       }
-    };
-    tick();
-    roundTimerRef.current = setInterval(tick, 250);
+    }
   };
+
+  tick();
+  roundTimerRef.current = setInterval(tick, 250);
+};
+
 
   const toggleHostPlays = async (val) => {
     setHostPlays(val);
@@ -699,8 +745,10 @@ export default function App() {
       setIsMultiplayerMode(false);
       setLobbyId("");
       setLobbyData(null);
+	  				console.log("leave lobby 2");
       return;
     }
+		  				console.log("leave lobby 3");
     await remove(ref(db, `lobbies/${lobbyId}/players/${playerId}`)).catch(() => {});
     if (isHost) {
       const snap = await get(ref(db, `lobbies/${lobbyId}/players`));
@@ -716,8 +764,10 @@ export default function App() {
         }
       } else {
         await remove(ref(db, `lobbies/${lobbyId}`));
+			  				console.log("leave lobby 3");
       }
     }
+		  console.log("leave lobby");
     setIsHost(false);
     setPlayerId(null);
     setLobbyId("");
