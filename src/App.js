@@ -42,7 +42,7 @@ const db = getDatabase(app);
 const SETS = {
   "Unit 2": "https://raw.githubusercontent.com/Maksimuiu/voka/main/Unit2",
   "2b": "https://raw.githubusercontent.com/Maksimuiu/voka/main/2b",
-  "Random": "random"
+  "The Months": "https://raw.githubusercontent.com/Maksimuiu/voka/main/The%20Months"
 };
 
 // ----------------------
