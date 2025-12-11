@@ -258,10 +258,12 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8,}$/.te
   const handleLogin = async () => {
     if (!isValidSchoolEmail(loginEmail)) {
       console.log("E-Mail muss auf @evgbm.net enden.");
+	  alert("E-Mail falsch");
       return;
     }
     if (!isValidPassword(loginPassword)) {
       console.log("Passwort muss min. 8 Zeichen/Zahlen enthalten (keine Sonderzeichen).");
+	  alert("Passwort falsch");
       return;
     }
 
