@@ -253,7 +253,7 @@ export default function App() {
   };
 // ---------------------- LOGIN RULES
 const isValidSchoolEmail = (email) => typeof email === "string" && email.trim().toLowerCase().endsWith("@evgbm.net");
-const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8,}$/.test(pw);
+const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.test(pw);
  // ---------------------- LOGIN HANDLER
   const handleLogin = async () => {
     if (!isValidSchoolEmail(loginEmail)) {
@@ -897,7 +897,7 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8,}$/.te
 
           <input
             type="password"
-            placeholder="Passwort )"
+            placeholder="Passwort"
             value={loginPassword}
             onChange={(e) => setLoginPassword(e.target.value)}
             style={styles.input}
