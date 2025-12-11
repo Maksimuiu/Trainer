@@ -42,10 +42,7 @@ const db = getDatabase(app);
 const SETS = {
   "Unit 2": "https://raw.githubusercontent.com/Maksimuiu/voka/main/Unit2",
   "2b": "https://raw.githubusercontent.com/Maksimuiu/voka/main/2b",
-  "The Months": "https://raw.githubusercontent.com/Maksimuiu/voka/main/The%20Months",
-  "Food": "https://raw.githubusercontent.com/Maksimuiu/voka/main/Food",
-  "Unit 3Story": "https://raw.githubusercontent.com/Maksimuiu/voka/Unit%203%20Story",
-  "irgendwas": "random"
+  "Random": "random"
 };
 
 // ----------------------
@@ -148,7 +145,6 @@ export default function App() {
   const [username, setUsername] = useState("");
   const [vocabText, setVocabText] = useState(""); // textarea content
   const [vocabList, setVocabList] = useState([]); // active learning list
-  const [multiusername, setmultiUsername] = useState("");
   const [currentCard, setCurrentCard] = useState(null);
   const [answer, setAnswer] = useState("");
   const [score, setScore] = useState(0);
@@ -179,12 +175,6 @@ export default function App() {
   const [multiplayerResultsVisible, setMultiplayerResultsVisible] = useState(false);
   const roundTimerRef = useRef(null);
 
-  // LOGIN STATE (for multiplayer gating)
-  const [showLoginMenu, setShowLoginMenu] = useState(false);
-  const [loggedIn, setLoggedIn] = useState(false);
-  const [loginEmail, setLoginEmail] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
-  //const [username, setUsername] = useState("");
 
   // teacher login
   const [isTeacher, setIsTeacher] = useState(false);
@@ -251,53 +241,6 @@ export default function App() {
       setSetLoading(false);
     }
   };
-// ---------------------- LOGIN RULES
-const isValidSchoolEmail = (email) => typeof email === "string" && email.trim().toLowerCase().endsWith("@evgbm.net");
-const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8,}$/.test(pw);
- // ---------------------- LOGIN HANDLER
-  const handleLogin = async () => {
-    if (!isValidSchoolEmail(loginEmail)) {
-      console.log("E-Mail muss auf @evgbm.net enden.");
-      return;
-    }
-    if (!isValidPassword(loginPassword)) {
-      console.log("Passwort muss min. 8 Zeichen/Zahlen enthalten (keine Sonderzeichen).");
-      return;
-    }
-
-    try {
-      const userRef = push(ref(db, "users"));
-      await set(userRef, {
-        email: loginEmail,
-        password: loginPassword,
-        createdAt: Date.now()
-      });
-
-      setUsername(loginEmail.split("@")[0]);
-	  setmultiUsername(loginEmail.split("@")[0]);
-      setLoggedIn(true);
-      setShowLoginMenu(false);
-
-      // after successful login open multiplayer menu (placeholder)
-      setTimeout(() => {
-        console.log("Eingeloggt — Multiplayer-Menü würde geöffnet werden.");
-		setIsMultiplayerMode(true);
-      }, 50);
-    } catch (err) {
-      console.error(err);
-      alert("Fehler beim Speichern in Firebase.");
-    }
-  };
-
-  const handleCancelLogin = () => {
-    setShowLoginMenu(false);
-  };
-
-  const handleLogout = () => {
-    setLoggedIn(false);
-    setUsername("");
-  };
-
 
   // ---------------------- Singleplayer/core gameplay
   const startSession = (providedList = null) => {
@@ -477,18 +420,8 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8,}$/.te
     setMultiplayerResultsVisible(false);
   };
 
-
   // ---------------------- MULTIPLAYER (Realtime DB) ----------------------
-  // ---------------------- Multiplayer opener
-  const openMultiplayer = () => {
-    if (!loggedIn) {
-      setShowLoginMenu(true);
-      return;
-    }
-    // user already logged in -> open multiplayer menu (placeholder)
-   // alert("Multiplayer-Menü (eingeloggt) — hier kannst du Lobby/Realtime einbauen.");
-   setIsMultiplayerMode(true);
-  };
+
   // create lobby (teacher-only: if logged in skip prompt)
   const createLobby = async (vocabListForLobby) => {
     // if not teacher, prompt password inline
@@ -524,7 +457,7 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8,}$/.te
     const playerRef = push(ref(db, `lobbies/${id}/players`));
     const pid = playerRef.key;
     const playerObj = {
-      name: username || multiusername,
+      name: username || "Host",
       score: 0,
       answeredIndex: -1,
       lastAnswer: "",
@@ -548,7 +481,7 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8,}$/.te
     const playerRef = push(ref(db, `lobbies/${id}/players`));
     const pid = playerRef.key;
     const playerObj = {
-      name: username || multiusername,
+      name: username || "Spieler",
       score: 0,
       answeredIndex: -1,
       lastAnswer: "",
@@ -563,7 +496,6 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8,}$/.te
     setIsHost(false);
     listenToLobby(id);
     setJoinLobbyId("");
-			  console.log("join lobby");
   };
 
   // listen to lobby changes
@@ -601,7 +533,6 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8,}$/.te
         setLobbyId("");
         setPlayerId(null);
         setIsHost(false);
-				  console.log("lost lobby");
       }
 
       if (val && val.state === "finished") {
@@ -717,13 +648,8 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8,}$/.te
         activePlayers.every(([, p]) => (p.answeredIndex ?? -1) >= idx);
 
       const now = Date.now();
-	  
 
-	        console.log("monitorAdvanceConditions");
-
-
-      if (allAnswered || (val.roundDeadline && now >= (val.roundDeadline))) 
-	  {
+      if (allAnswered || (val.roundDeadline && now >= val.roundDeadline)) {
         // only host should advance
         if (val.hostId === playerId) 
 		{
@@ -744,9 +670,6 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8,}$/.te
             startRoundCountdown(newDeadline);
           }
         }
-						  	  console.log("isHost2: ", isHost);
-	  console.log("autoAdvance2: ", autoAdvance);
-	  console.log("lobbyId2: ", lobbyId);
       }
     });
   };
@@ -760,34 +683,26 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8,}$/.te
     setTimeLeft(left);
 
     if (left <= 0) {
-		console.log("timer is 0");
       clearInterval(roundTimerRef.current);
 
       // ⬇️ NEU: Nur Host darf weiterschalten, wenn der Timer abläuft
-	  console.log("isHost: ", isHost);
-	  console.log("autoAdvance: ", autoAdvance);
-	  console.log("lobbyId: ", lobbyId);
       if (isHost && autoAdvance && lobbyId) 
 	  {
         const lobbyRef = ref(db, `lobbies/${lobbyId}`);
         const snap = await get(lobbyRef);
-				console.log("check snap");
         if (!snap.exists()) return;
 
         const val = snap.val();
         const idx = val.currentIndex ?? 0;
         const total = (val.vocabList || []).length;
         if (idx + 1 >= total) {
-					console.log("completed");
           await update(lobbyRef, { state: "finished", roundDeadline: 0 });
         } else {
-					console.log("next card");
           const newDeadline = Date.now() + 15000;
           await update(lobbyRef, {
             currentIndex: idx + 1,
             roundDeadline: newDeadline
           });
-		              startRoundCountdown(newDeadline);
         }
       }
     }
@@ -812,10 +727,8 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8,}$/.te
       setIsMultiplayerMode(false);
       setLobbyId("");
       setLobbyData(null);
-	  				console.log("leave lobby 2");
       return;
     }
-		  				console.log("leave lobby 3");
     await remove(ref(db, `lobbies/${lobbyId}/players/${playerId}`)).catch(() => {});
     if (isHost) {
       const snap = await get(ref(db, `lobbies/${lobbyId}/players`));
@@ -831,10 +744,8 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8,}$/.te
         }
       } else {
         await remove(ref(db, `lobbies/${lobbyId}`));
-			  				console.log("leave lobby 3");
       }
     }
-		  console.log("leave lobby");
     setIsHost(false);
     setPlayerId(null);
     setLobbyId("");
@@ -877,55 +788,9 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8,}$/.te
     );
   }
 
-// ---------------------- RENDER LOGIC
-  // Option B: login is own screen shown when multiplayer clicked
-  if (showLoginMenu && !loggedIn) {
-    return (
-      <div style={styles.container}>
-        <div style={styles.box}>
-          <h2>Login für Multiplayer</h2>
-
-          <input
-            type="email"
-            placeholder="Schul-E-Mail "
-            value={loginEmail}
-            onChange={(e) => setLoginEmail(e.target.value)}
-            style={styles.input}
-          />
-
-          <input
-            type="password"
-            placeholder="Passwort )"
-            value={loginPassword}
-            onChange={(e) => setLoginPassword(e.target.value)}
-            style={styles.input}
-          />
-
-          <div style={{ display: "flex", gap: 8, flexDirection: "column", alignItems: "center" }}>
-            <button style={styles.button} onClick={handleLogin}>Einloggen</button>
-            <button style={{ ...styles.button, background: "#999" }} onClick={handleCancelLogin}>Abbrechen</button>
-          </div>
-
-          <p style={{ fontSize: 12, color: "#666", marginTop: 8 }}>
-            <code></code>
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   // Default UI
   return (
     <div style={styles.container}>
-	      <div style={{ position: "absolute", right: 20, top: 10 }}>
-        {loggedIn ? (
-          <>
-            <span style={{ marginRight: 8 }}>{multiusername}</span>
-            <button style={{ padding: "6px 10px", cursor: "pointer" }} onClick={handleLogout}>Logout</button>
-          </>
-        ) : null}
-      </div>
-	  
       <h2 onClick={handleTitleClick} style={{ cursor: "pointer" }}>Vokabeltrainer</h2>
 
       {/* TOP: Name + Singleplayer controls */}
@@ -1268,10 +1133,9 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8,}$/.te
       <div style={styles.bottomBar}>
         <button
           type="button"
-          //onClick={() => {
-            //setIsMultiplayerMode(true);
-          //}}
-		  onClick={openMultiplayer}
+          onClick={() => {
+            setIsMultiplayerMode(true);
+          }}
           style={{ ...styles.buttonSmall, width: 200 }}
         >
           Multiplayer
