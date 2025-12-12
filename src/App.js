@@ -44,6 +44,7 @@ const SETS = {
   "2b": "https://raw.githubusercontent.com/Maksimuiu/voka/main/2b",
   "The Months": "https://raw.githubusercontent.com/Maksimuiu/voka/main/The%20Months",
   "Food": "https://raw.githubusercontent.com/Maksimuiu/voka/main/Food",
+  "Unit 1Story":"https://raw.githubusercontent.com/Maksimuiu/voka/Unit%201%20Story",
   "Unit 3Story": "https://raw.githubusercontent.com/Maksimuiu/voka/Unit%203%20Story",
   "irgendwas": "random"
 };
