@@ -46,6 +46,7 @@ const SETS = {
   "Food": "https://raw.githubusercontent.com/Maksimuiu/voka/main/Food",
   "Unit 1Story":"https://raw.githubusercontent.com/Maksimuiu/voka/main/Unit%201%20Story",
   "Unit 3Story": "https://raw.githubusercontent.com/Maksimuiu/voka/main/Unit%203%20Story",
+  "Dare": "https://raw.githubusercontent.com/Maksimuiu/voka/main/Dare"
   "irgendwas": "random"
 };
 
