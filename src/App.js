@@ -47,6 +47,7 @@ const SETS = {
   "Unit 1Story":"https://raw.githubusercontent.com/Maksimuiu/voka/main/Unit%201%20Story",
   "Unit 3Story": "https://raw.githubusercontent.com/Maksimuiu/voka/main/Unit%203%20Story",
   "Dare": "https://raw.githubusercontent.com/Maksimuiu/voka/main/Dare",
+  "Unit 2  want - wait": "https://raw.githubusercontent.com/Maksimuiu/voka/main/Unit%202%20%20want%20-%20wait",	
   "irgendwas": "random"
 };
 
