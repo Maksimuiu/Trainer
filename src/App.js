@@ -41,6 +41,7 @@ const db = getDatabase(app);
 // Lernsets (URLs bleiben unverändert wie gewünscht)
 const SETS = {
   "Unit 2": "https://raw.githubusercontent.com/Maksimuiu/voka/main/Unit2",
+  "Unit 2Story": "https://raw.githubusercontent.com/Maksimuiu/voka/main/Unit%202%20Story",
   "2b": "https://raw.githubusercontent.com/Maksimuiu/voka/main/2b",
   "The Months": "https://raw.githubusercontent.com/Maksimuiu/voka/main/The%20Months",
   "Food": "https://raw.githubusercontent.com/Maksimuiu/voka/main/Food",
