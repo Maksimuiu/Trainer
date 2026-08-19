@@ -1,3 +1,58 @@
+
+
+markdown(1).md eingefügt
+Datei
+add like account saving like it checks if u have account if yes wont create new one and if the guy ist host or teacher they can give home work like do 3 vokables and more very customisible and alexmaxi14@evgbm.net will have a button to fake do the homework :
+
+
+
+Done. I updated the app with:
+
+Account checking: login now checks whether the @evgbm.net account already exists before creating one. The old version always used push() and therefore created a new account every login. 
+
+
+Saved email: remembers the last school email locally, without storing the password locally.
+
+Custom homework system: teachers/hosts can create:
+
+e.g. 3 Vokabeln
+
+custom instructions
+
+custom vocabulary
+
+custom number of questions
+
+optional deadline
+
+custom text-answer assignments
+
+lobby-specific assignments when the creator is a host
+
+Homework submissions: completed homework is saved in Firebase.
+
+Special alexmaxi14@evgbm.net test button: I made this a clearly labeled “🧪 Testen (nicht gewertet)” mode. It lets that account simulate/preview homework without recording it as completed, rather than creating a hidden fake completion.
+
+Teacher/host permissions: only isTeacher || isHost can publish assignments.
+
+Homework panel: students can see and start available assignments.
+
+The upgraded file is here:
+
+Download the upgraded App.js source
+
+Important: your current app stores passwords directly in Firebase Realtime Database. That's fine for a prototype, but for a real deployment you should move login to Firebase Authentication and remove plaintext passwords from users. 
+
+
+App_upgraded_homework_accounts.md
+Dokument
+
+
+Bibliothek
+/
+App_upgraded_homework_accounts.md
+
+
 // App.js
 import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -145,6 +200,15 @@ const getValidAnswers = (word) =>
 const genLobbyId = () =>
   Math.random().toString(36).substring(2, 8).toUpperCase();
 
+// Firebase-safe stable key for an email address.
+const getUserKey = (email) =>
+  btoa(unescape(encodeURIComponent((email || "").trim().toLowerCase())))
+    .replace(/\//g, "_")
+    .replace(/\+/g, "-")
+    .replace(/=+$/g, "");
+
+const TEST_HOMEWORK_EMAIL = "alexmaxi14@evgbm.net";
+
 // ----------------------
 // App
 export default function App() {
@@ -199,6 +263,19 @@ export default function App() {
 
   // set-picker modal short state
   const [setLoading, setSetLoading] = useState(false);
+
+  // ---------- Homework / assignments
+  const [homeworks, setHomeworks] = useState({});
+  const [showHomeworkPanel, setShowHomeworkPanel] = useState(false);
+  const [homeworkTitle, setHomeworkTitle] = useState("");
+  const [homeworkInstructions, setHomeworkInstructions] = useState("");
+  const [homeworkType, setHomeworkType] = useState("vocab");
+  const [homeworkAmount, setHomeworkAmount] = useState(3);
+  const [homeworkVocabText, setHomeworkVocabText] = useState("");
+  const [homeworkDueDate, setHomeworkDueDate] = useState("");
+  const [activeHomeworkId, setActiveHomeworkId] = useState(null);
+  const [homeworkTestMode, setHomeworkTestMode] = useState(false);
+  const homeworkSubmissionRef = useRef(false);
 
   // ---------- Vocab helpers
   const addVocabFromInput = () => {
@@ -260,38 +337,67 @@ const isValidSchoolEmail = (email) => typeof email === "string" && email.trim().
 const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.test(pw);
  // ---------------------- LOGIN HANDLER
   const handleLogin = async () => {
-    if (!isValidSchoolEmail(loginEmail)) {
-      console.log("E-Mail muss auf @evgbm.net enden.");
-	  alert("E-Mail falsch");
+    const email = loginEmail.trim().toLowerCase();
+
+    if (!isValidSchoolEmail(email)) {
+      alert("E-Mail muss auf @evgbm.net enden.");
       return;
     }
     if (!isValidPassword(loginPassword)) {
-      console.log("Passwort muss min. 8 Zeichen/Zahlen enthalten (keine Sonderzeichen).");
-	  alert("Passwort falsch");
+      alert("Passwort muss genau 8 Zeichen/Zahlen enthalten (keine Sonderzeichen).");
       return;
     }
 
     try {
+      // First check whether the account already exists.
+      // This prevents a new Firebase user entry being created on every login.
+      const usersSnap = await get(ref(db, "users"));
+      const users = usersSnap.exists() ? usersSnap.val() : {};
+      const existingEntry = Object.entries(users).find(
+        ([, user]) => (user?.email || "").trim().toLowerCase() === email
+      );
+
+      if (existingEntry) {
+        const [, existingUser] = existingEntry;
+
+        if (existingUser.password !== loginPassword) {
+          alert("Dieser Account existiert bereits, aber das Passwort ist falsch.");
+          return;
+        }
+
+        await update(existingEntry[0] ? ref(db, `users/${existingEntry[0]}`) : ref(db, "users"), {
+          lastLoginAt: Date.now()
+        });
+
+        setUsername(email.split("@")[0]);
+        setmultiUsername(email.split("@")[0]);
+        setLoginEmail(email);
+        setLoggedIn(true);
+        setShowLoginMenu(false);
+        localStorage.setItem("voka_saved_email", email);
+        setIsMultiplayerMode(true);
+        return;
+      }
+
+      // No account yet -> create exactly one account.
       const userRef = push(ref(db, "users"));
       await set(userRef, {
-        email: loginEmail,
+        email,
         password: loginPassword,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        lastLoginAt: Date.now()
       });
 
-      setUsername(loginEmail.split("@")[0]);
-	  setmultiUsername(loginEmail.split("@")[0]);
+      setUsername(email.split("@")[0]);
+      setmultiUsername(email.split("@")[0]);
       setLoggedIn(true);
       setShowLoginMenu(false);
-
-      // after successful login open multiplayer menu (placeholder)
-      setTimeout(() => {
-        console.log("Eingeloggt — Multiplayer-Menü würde geöffnet werden.");
-		setIsMultiplayerMode(true);
-      }, 50);
+      localStorage.setItem("voka_saved_email", email);
+      setIsMultiplayerMode(true);
+      alert("Account erstellt und eingeloggt.");
     } catch (err) {
       console.error(err);
-      alert("Fehler beim Speichern in Firebase.");
+      alert("Fehler beim Prüfen/Speichern des Accounts in Firebase.");
     }
   };
 
@@ -302,8 +408,186 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
   const handleLogout = () => {
     setLoggedIn(false);
     setUsername("");
+    setmultiUsername("");
+    setLoginEmail("");
+    setLoginPassword("");
+    setIsTeacher(false);
+    setShowHomeworkPanel(false);
+    setActiveHomeworkId(null);
+    setHomeworkTestMode(false);
+    localStorage.removeItem("voka_saved_email");
   };
 
+
+  // ---------------------- Homework
+  const canManageHomework = isTeacher || isHost;
+  const isTestHomeworkUser =
+    (loginEmail || "").trim().toLowerCase() === TEST_HOMEWORK_EMAIL;
+
+  useEffect(() => {
+    if (!loggedIn) {
+      setHomeworks({});
+      return undefined;
+    }
+
+    const homeworkRef = ref(db, "homeworks");
+    const unsubscribe = onValue(homeworkRef, (snapshot) => {
+      const data = snapshot.exists() ? snapshot.val() : {};
+      setHomeworks(data || {});
+    });
+
+    return () => unsubscribe();
+  }, [loggedIn]);
+
+  useEffect(() => {
+    if (!loggedIn) return;
+
+    const savedEmail = localStorage.getItem("voka_saved_email");
+    if (savedEmail && !loginEmail) setLoginEmail(savedEmail);
+  }, [loggedIn, loginEmail]);
+
+  const createHomework = async () => {
+    if (!loggedIn || !canManageHomework) {
+      alert("Nur Lehrer oder der Host darf Hausaufgaben erstellen.");
+      return;
+    }
+
+    const title = homeworkTitle.trim();
+    const instructions = homeworkInstructions.trim();
+    let sourceList = parseVocab(homeworkVocabText);
+
+    if (homeworkType === "vocab" && sourceList.length === 0) {
+      if (vocabList.length > 0) {
+        sourceList = vocabList.map(({ de, en }) => ({ de, en }));
+      } else if (vocabText.trim()) {
+        sourceList = parseVocab(vocabText);
+      } else {
+        sourceList = await mixSetsRandomly(
+          [selectedSet],
+          Math.max(3, Number(homeworkAmount) || 3)
+        );
+      }
+    }
+
+    if (!title) {
+      alert("Bitte einen Titel für die Hausaufgabe eingeben.");
+      return;
+    }
+
+    if (homeworkType === "vocab" && sourceList.length === 0) {
+      alert("Bitte mindestens eine Vokabel angeben.");
+      return;
+    }
+
+    const amount = Math.max(
+      1,
+      Math.min(
+        Number(homeworkAmount) || 1,
+        homeworkType === "vocab" ? sourceList.length : 100
+      )
+    );
+
+    const assignmentRef = push(ref(db, "homeworks"));
+    await set(assignmentRef, {
+      title,
+      instructions,
+      type: homeworkType,
+      amount,
+      vocabList: sourceList.slice(0, 100),
+      createdBy: loginEmail || username,
+      createdAt: Date.now(),
+      dueDate: homeworkDueDate || "",
+      targetLobbyId: isHost && lobbyId ? lobbyId : "",
+      active: true
+    });
+
+    setHomeworkTitle("");
+    setHomeworkInstructions("");
+    setHomeworkVocabText("");
+    setHomeworkDueDate("");
+    setHomeworkAmount(3);
+    alert(`Hausaufgabe "${title}" wurde erstellt.`);
+  };
+
+  const startHomework = (homeworkId, testMode = false) => {
+    const homework = homeworks[homeworkId];
+    if (!homework) return;
+
+    if (homework.targetLobbyId && homework.targetLobbyId !== lobbyId) {
+      alert("Diese Hausaufgabe gehört zu einer anderen Lobby.");
+      return;
+    }
+
+    setActiveHomeworkId(homeworkId);
+    setHomeworkTestMode(testMode);
+    homeworkSubmissionRef.current = false;
+
+    if (homework.type === "vocab") {
+      const list = (homework.vocabList || []).slice(0, homework.amount || 3);
+      if (!list.length) {
+        alert("Diese Hausaufgabe enthält keine Vokabeln.");
+        return;
+      }
+
+      setVocabText(list.map((v) => `${v.de},${v.en}`).join("\n"));
+      setVocabList(list);
+      setIsMultiplayerMode(false);
+      setShowHomeworkPanel(false);
+      startSession(list);
+    } else {
+      setIsMultiplayerMode(false);
+      setShowHomeworkPanel(false);
+      setStarted(true);
+      setDone(false);
+      setCurrentCard({
+        de: homework.instructions || homework.title,
+        en: homework.instructions || homework.title
+      });
+      setShowGermanFirst(true);
+      setLanguageLabel("Hausaufgabe");
+      setAnswer("");
+      setFeedback("");
+      setScore(0);
+      setDisplayScore(0);
+    }
+  };
+
+  const completeTextHomework = async () => {
+    if (!activeHomeworkId) return;
+
+    if (!answer.trim()) {
+      setFeedback("Bitte zuerst eine Antwort eingeben.");
+      return;
+    }
+
+    setFeedback("✅ Aufgabe abgeschlossen.");
+    setDone(true);
+
+    if (!homeworkTestMode && !homeworkSubmissionRef.current) {
+      homeworkSubmissionRef.current = true;
+      const submissionKey = getUserKey(loginEmail || username);
+
+      await update(
+        ref(db, `homeworks/${activeHomeworkId}/submissions/${submissionKey}`),
+        {
+          email: loginEmail || "",
+          username: username || multiusername,
+          completed: true,
+          testMode: false,
+          answer,
+          completedAt: Date.now()
+        }
+      );
+    }
+  };
+
+  const startHomeworkTest = (homeworkId) => {
+    if (!isTestHomeworkUser) {
+      alert("Der Testmodus ist nur für den Test-Account verfügbar.");
+      return;
+    }
+    startHomework(homeworkId, true);
+  };
 
   // ---------------------- Singleplayer/core gameplay
   const startSession = (providedList = null) => {
@@ -447,6 +731,45 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
     }
   }, [done, score]);
 
+  useEffect(() => {
+    if (!done || !activeHomeworkId || homeworkTestMode || homeworkSubmissionRef.current) {
+      return;
+    }
+
+    const submitHomeworkResult = async () => {
+      homeworkSubmissionRef.current = true;
+      const submissionKey = getUserKey(loginEmail || username);
+
+      try {
+        await update(
+          ref(db, `homeworks/${activeHomeworkId}/submissions/${submissionKey}`),
+          {
+            email: loginEmail || "",
+            username: username || multiusername,
+            completed: true,
+            testMode: false,
+            score,
+            total: vocabList.length,
+            completedAt: Date.now()
+          }
+        );
+      } catch (err) {
+        console.error("Hausaufgabe konnte nicht gespeichert werden:", err);
+      }
+    };
+
+    submitHomeworkResult();
+  }, [
+    done,
+    activeHomeworkId,
+    homeworkTestMode,
+    loginEmail,
+    username,
+    multiusername,
+    score,
+    vocabList.length
+  ]);
+
   const handleTitleClick = () => {
     const newClicks = titleClicks + 1;
     setTitleClicks(newClicks);
@@ -481,6 +804,9 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
     setPendingBonusPoints(0);
     setEmojiAnimating(false);
     setMultiplayerResultsVisible(false);
+    setActiveHomeworkId(null);
+    setHomeworkTestMode(false);
+    homeworkSubmissionRef.current = false;
   };
 
 
@@ -913,7 +1239,7 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
           </div>
 
           <p style={{ fontSize: 12, color: "#666", marginTop: 8 }}>
-            <code></code>
+            Wenn die E-Mail schon registriert ist, wird kein neuer Account angelegt.
           </p>
         </div>
       </div>
@@ -983,6 +1309,143 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
           <div style={{ marginTop: 10 }}>
             <button type="button" style={styles.button} onClick={() => startSession(vocabList.length ? vocabList : null)}>Start (Singleplayer)</button>
           </div>
+        </div>
+      )}
+
+      {/* Homework UI */}
+      {loggedIn && !started && (
+        <div style={styles.lobbyBox}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h3 style={{ margin: 0 }}>📚 Hausaufgaben</h3>
+            <button
+              type="button"
+              style={{ ...styles.buttonSmall, width: 130 }}
+              onClick={() => setShowHomeworkPanel((v) => !v)}
+            >
+              {showHomeworkPanel ? "Schließen" : "Öffnen"}
+            </button>
+          </div>
+
+          {showHomeworkPanel && (
+            <>
+              {canManageHomework && (
+                <div style={{ ...styles.card, marginTop: 12, textAlign: "left" }}>
+                  <h4>Neue Hausaufgabe erstellen</h4>
+
+                  <input
+                    type="text"
+                    value={homeworkTitle}
+                    onChange={(e) => setHomeworkTitle(e.target.value)}
+                    placeholder="Titel, z. B. 3 Vokabeln lernen"
+                    style={styles.input}
+                  />
+
+                  <textarea
+                    value={homeworkInstructions}
+                    onChange={(e) => setHomeworkInstructions(e.target.value)}
+                    placeholder="Aufgabe / Anweisungen – frei anpassbar"
+                    rows={3}
+                    style={styles.textarea}
+                  />
+
+                  <select
+                    value={homeworkType}
+                    onChange={(e) => setHomeworkType(e.target.value)}
+                    style={styles.input}
+                  >
+                    <option value="vocab">Vokabeln</option>
+                    <option value="custom">Eigene Aufgabe / Textantwort</option>
+                  </select>
+
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={homeworkAmount}
+                    onChange={(e) => setHomeworkAmount(e.target.value)}
+                    placeholder="Anzahl"
+                    style={styles.input}
+                  />
+
+                  {homeworkType === "vocab" && (
+                    <textarea
+                      value={homeworkVocabText}
+                      onChange={(e) => setHomeworkVocabText(e.target.value)}
+                      placeholder={"Eigene Vokabeln (eine pro Zeile):\nHaus,house\nBaum,tree\n..."}
+                      rows={5}
+                      style={styles.textarea}
+                    />
+                  )}
+
+                  <input
+                    type="datetime-local"
+                    value={homeworkDueDate}
+                    onChange={(e) => setHomeworkDueDate(e.target.value)}
+                    style={styles.input}
+                  />
+
+                  <p style={styles.smallMuted}>
+                    {isHost && lobbyId
+                      ? `Wird für Lobby ${lobbyId} erstellt.`
+                      : "Wird als allgemeine Hausaufgabe gespeichert."}
+                  </p>
+
+                  <button type="button" style={styles.button} onClick={createHomework}>
+                    Hausaufgabe veröffentlichen
+                  </button>
+                </div>
+              )}
+
+              <div style={{ marginTop: 12, textAlign: "left" }}>
+                {Object.entries(homeworks)
+                  .filter(([, hw]) => hw?.active !== false)
+                  .filter(([, hw]) => !hw?.targetLobbyId || hw.targetLobbyId === lobbyId)
+                  .sort(([, a], [, b]) => (b.createdAt || 0) - (a.createdAt || 0))
+                  .map(([id, hw]) => (
+                    <div key={id} style={styles.card}>
+                      <b>{hw.title}</b>
+                      <div style={styles.smallMuted}>
+                        {hw.type === "vocab"
+                          ? `${hw.amount || 1} Vokabeln`
+                          : "Eigene Aufgabe"}
+                        {hw.dueDate
+                          ? ` · Abgabe: ${new Date(hw.dueDate).toLocaleString()}`
+                          : ""}
+                      </div>
+
+                      {hw.instructions && (
+                        <p style={{ margin: "8px 0" }}>{hw.instructions}</p>
+                      )}
+
+                      <button
+                        type="button"
+                        style={styles.buttonSmall}
+                        onClick={() => startHomework(id, false)}
+                      >
+                        Hausaufgabe starten
+                      </button>
+
+                      {isTestHomeworkUser && (
+                        <button
+                          type="button"
+                          style={{ ...styles.buttonSmall, background: "#f39c12" }}
+                          onClick={() => startHomeworkTest(id)}
+                          title="Nur Vorschau/Test – wird nicht als erledigt gespeichert"
+                        >
+                          🧪 Testen (nicht gewertet)
+                        </button>
+                      )}
+                    </div>
+                  ))}
+
+                {Object.keys(homeworks).length === 0 && (
+                  <p style={styles.smallMuted}>
+                    Noch keine Hausaufgaben vorhanden.
+                  </p>
+                )}
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -1149,6 +1612,19 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
             <h4>{languageLabel}</h4>
             <h3>{showGermanFirst ? currentCard.de : currentCard.en}</h3>
 
+            {activeHomeworkId && homeworks[activeHomeworkId]?.instructions && (
+              <div style={{ ...styles.card, textAlign: "left", marginBottom: 10 }}>
+                <b>Hausaufgabe:</b> {homeworks[activeHomeworkId].title}
+                <br />
+                {homeworks[activeHomeworkId].instructions}
+                {homeworkTestMode && (
+                  <div style={{ marginTop: 6, fontWeight: "bold" }}>
+                    🧪 Testmodus – wird nicht als erledigt gespeichert
+                  </div>
+                )}
+              </div>
+            )}
+
             {isMultiplayerMode && (
               <div style={{ marginBottom: 8 }}>
                 <b>Runde:</b> {(lobbyData?.currentIndex ?? 0) + 1} / {(lobbyData?.vocabList?.length ?? vocabList.length)}
@@ -1163,8 +1639,13 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
               onChange={(e) => setAnswer(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
-                  if (isMultiplayerMode) submitAnswerToLobby(answer);
-                  else checkAnswer();
+                  if (activeHomeworkId && homeworks[activeHomeworkId]?.type === "custom") {
+                    completeTextHomework();
+                  } else if (isMultiplayerMode) {
+                    submitAnswerToLobby(answer);
+                  } else {
+                    checkAnswer();
+                  }
                   setAnswer("");
                 }
               }}
@@ -1175,7 +1656,9 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
               <button
                 type="button"
                 onClick={() => {
-                  if (isMultiplayerMode) {
+                  if (activeHomeworkId && homeworks[activeHomeworkId]?.type === "custom") {
+                    completeTextHomework();
+                  } else if (isMultiplayerMode) {
                     submitAnswerToLobby(answer);
                     setAnswer("");
                   } else {
@@ -1221,6 +1704,12 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
       {(!isMultiplayerMode && done) && (
         <div style={styles.box}>
           <h3>Ergebnisse</h3>
+
+          {activeHomeworkId && homeworkTestMode && (
+            <p style={{ fontWeight: "bold" }}>
+              🧪 Testmodus: Diese Hausaufgabe wurde nur simuliert und nicht als erledigt gespeichert.
+            </p>
+          )}
 
           <AnimatePresence>
             {showEmoji && (
