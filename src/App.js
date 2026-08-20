@@ -200,16 +200,6 @@ export default function App() {
   const [setLoading, setSetLoading] = useState(false);
 
   // ---------- Vocab helpers
-  /*const addVocabFromInput = () => {
-    const parsed = parseVocab(vocabText);
-    if (parsed.length === 0) {
-      alert("Bitte Vokabeln im Format 'Deutsch,Englisch' eingeben (eine pro Zeile).");
-      return;
-    }
-    const prepared = parsed.map((v) => ({ ...v, answered: false, correct: false, userAnswer: "" }));
-    setVocabList(prepared.slice(0, 50));
-    alert(`Hinzugefügt: ${prepared.length} Vokabeln (max 50 verwendet).`);
-  };*/
 
   const mixSetsRandomly = async (setNames, amountPerSet = 5) => {
     if (setNames.includes("random")) {
