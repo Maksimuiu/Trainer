@@ -164,6 +164,7 @@ export default function App() {
   const [languageLabel, setLanguageLabel] = useState("");
   const [titleClicks, setTitleClicks] = useState(0);
   const [pendingBonusPoints, setPendingBonusPoints] = useState(0);
+  const [isAlex, setIsAlex] = useState(false);
 
   // end animation / smiley control
   const [showEmoji, setShowEmoji] = useState(false);
