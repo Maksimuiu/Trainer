@@ -196,7 +196,8 @@ export default function App() {
   const [autoAdvance, setAutoAdvance] = useState(true);
   const [bonusRoundActive, setBonusRoundActive] = useState(false);
 
-  // ---------- Homework / saved accounts
+  // ---------- Accounts / Homework
+  const [loginRole, setLoginRole] = useState("student");
   const [homework, setHomework] = useState({});
   const [homeworkProgress, setHomeworkProgress] = useState({});
   const [homeworkTitle, setHomeworkTitle] = useState("");
@@ -211,6 +212,16 @@ export default function App() {
   const [setLoading, setSetLoading] = useState(false);
 
   // ---------- Vocab helpers
+  const addVocabFromInput = () => {
+    const parsed = parseVocab(vocabText);
+    if (parsed.length === 0) {
+      alert("Bitte Vokabeln im Format 'Deutsch,Englisch' eingeben (eine pro Zeile).");
+      return;
+    }
+    const prepared = parsed.map((v) => ({ ...v, answered: false, correct: false, userAnswer: "" }));
+    setVocabList(prepared.slice(0, 50));
+    alert(`Hinzugefügt: ${prepared.length} Vokabeln (max 50 verwendet).`);
+  };
 
   const mixSetsRandomly = async (setNames, amountPerSet = 5) => {
     if (setNames.includes("random")) {
@@ -259,7 +270,7 @@ export default function App() {
 const isValidSchoolEmail = (email) => typeof email === "string" && email.trim().toLowerCase().endsWith("@evgbm.net");
 const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.test(pw);
  // ---------------------- LOGIN HANDLER
-  const userKeyFromEmail = (email) => encodeURIComponent((email || "").trim().toLowerCase());
+  const userKeyFromEmail = (email) => encodeURIComponent(email.trim().toLowerCase());
 
   const handleLogin = async () => {
     if (!isValidSchoolEmail(loginEmail)) {
@@ -267,14 +278,17 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
       return;
     }
     if (!isValidPassword(loginPassword)) {
-      alert("Passwort muss genau 8 Zeichen/Zahlen enthalten (keine Sonderzeichen).");
+      alert("Passwort muss genau 8 Zeichen/Zahlen enthalten.");
+      return;
+    }
+    if (loginRole === "teacher" && loginPassword !== TEACHER_PASSWORD) {
+      alert("Falscher Lehrer-Code.");
       return;
     }
 
     try {
       const email = loginEmail.trim().toLowerCase();
-      const userKey = userKeyFromEmail(email);
-      const userRef = ref(db, `users/${userKey}`);
+      const userRef = ref(db, `users/${userKeyFromEmail(email)}`);
       const snap = await get(userRef);
       let user;
 
@@ -284,12 +298,16 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
           alert("Falsches Passwort.");
           return;
         }
+        if (loginRole === "teacher" && user.role !== "teacher") {
+          user = { ...user, role: "teacher" };
+          await update(userRef, { role: "teacher" });
+        }
       } else {
         user = {
           email,
           password: loginPassword,
           username: email.split("@")[0],
-          role: email === "alexmaxi14@evgbm.net" ? "teacher" : "student",
+          role: loginRole,
           createdAt: Date.now()
         };
         await set(userRef, user);
@@ -305,10 +323,11 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
       setShowLoginMenu(false);
       setIsMultiplayerMode(true);
     } catch (err) {
-      console.error(err);
-      alert("Fehler beim Speichern in Firebase.");
+      console.error("Firebase login/save error:", err);
+      alert("Firebase-Speicherfehler. Prüfe in Firebase Realtime Database die Rules: angemeldete Nutzer müssen Schreib-/Leserechte für users, homework und userHomework haben.");
     }
   };
+
   const handleCancelLogin = () => {
     setShowLoginMenu(false);
   };
@@ -322,7 +341,6 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
     setHomework({});
     setHomeworkProgress({});
     setActiveHomework(null);
-    setIsMultiplayerMode(false);
   };
 
 
@@ -332,90 +350,74 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
     if (!homeworkTitle.trim()) return alert("Bitte einen Titel eingeben.");
     const amount = Math.max(1, Math.min(50, Number(homeworkAmount) || 1));
     try {
-      const newRef = push(ref(db, "homework"));
-      await set(newRef, {
+      const homeworkRef = push(ref(db, "homework"));
+      await set(homeworkRef, {
         title: homeworkTitle.trim(),
         setName: homeworkSet,
         amount,
         due: homeworkDue || "",
         createdBy: username,
-        createdByEmail: loginEmail.trim().toLowerCase(),
         createdAt: Date.now(),
         active: true
       });
-      setHomeworkTitle("");
-      setHomeworkAmount(3);
-      setHomeworkDue("");
+      setHomeworkTitle(""); setHomeworkDue(""); setHomeworkAmount(3);
       setShowHomeworkCreator(false);
       alert("Hausaufgabe erstellt.");
     } catch (err) {
       console.error(err);
-      alert("Hausaufgabe konnte nicht erstellt werden.");
+      alert("Hausaufgabe konnte nicht gespeichert werden. Prüfe die Firebase Rules.");
     }
   };
 
   const startHomework = async (hw) => {
     try {
-      const amount = Math.max(1, Number(hw.amount) || 1);
-      let words;
-      if (hw.setName === "irgendwas") words = await mixSetsRandomly(["random"], amount);
+      let words = [];
+      if (SETS[hw.setName] === "random") words = await mixSetsRandomly(["random"], Number(hw.amount) || 3);
       else {
         const res = await fetch(SETS[hw.setName]);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        words = parseVocab(await res.text()).sort(() => Math.random() - 0.5).slice(0, amount);
+        words = parseVocab(await res.text()).sort(() => Math.random() - 0.5).slice(0, Number(hw.amount) || 3);
       }
-      if (!words.length) return alert("Keine Vokabeln für diese Hausaufgabe gefunden.");
+      if (!words.length) return alert("Keine Vokabeln gefunden.");
       setActiveHomework(hw);
       startSession(words);
       setIsMultiplayerMode(false);
-    } catch (err) {
-      console.error(err);
-      alert("Hausaufgabe konnte nicht geladen werden.");
-    }
+    } catch (err) { console.error(err); alert("Hausaufgabe konnte nicht geladen werden."); }
   };
 
   const fakeDoHomework = async (hw) => {
     if (!isAlex) return;
-    const key = userKeyFromEmail(loginEmail);
-    await set(ref(db, `userHomework/${key}/${hw.id}`), {
-      progress: Number(hw.amount) || 0,
-      finished: true,
-      fake: true,
-      completedAt: Date.now()
-    });
-    alert("Hausaufgabe als erledigt markiert (FAKE).");
-  };
-
-  const deleteHomework = async (hw) => {
-    if (!isTeacher || !hw.id) return;
-    if (!window.confirm(`Hausaufgabe "${hw.title}" löschen?`)) return;
-    await remove(ref(db, `homework/${hw.id}`));
+    try {
+      await set(ref(db, `userHomework/${userKeyFromEmail(loginEmail)}/${hw.id}`), {
+        progress: Number(hw.amount) || 0, finished: true, fake: true, completedAt: Date.now()
+      });
+      alert("Hausaufgabe als erledigt markiert (FAKE).");
+    } catch (err) { console.error(err); alert("Firebase-Speicherfehler."); }
   };
 
   useEffect(() => {
-    if (!loggedIn) { setHomework({}); return undefined; }
+    if (!loggedIn) return undefined;
     return onValue(ref(db, "homework"), snap => {
       const raw = snap.val() || {};
-      setHomework(Object.fromEntries(Object.entries(raw).map(([id, value]) => [id, { ...value, id }])));
-    });
+      setHomework(Object.fromEntries(Object.entries(raw).map(([id, hw]) => [id, { ...hw, id }])));
+    }, err => console.error("Homework read error:", err));
   }, [loggedIn]);
 
   useEffect(() => {
-    if (!loggedIn || !loginEmail) { setHomeworkProgress({}); return undefined; }
-    return onValue(ref(db, `userHomework/${userKeyFromEmail(loginEmail)}`), snap => setHomeworkProgress(snap.val() || {}));
+    if (!loggedIn || !loginEmail) return undefined;
+    return onValue(ref(db, `userHomework/${userKeyFromEmail(loginEmail)}`), snap => {
+      setHomeworkProgress(snap.val() || {});
+    }, err => console.error("Homework progress read error:", err));
   }, [loggedIn, loginEmail]);
 
   useEffect(() => {
     if (!done || !activeHomework || !loggedIn || isMultiplayerMode) return;
-    const correct = vocabList.filter(v => v.correct).length;
     const total = Number(activeHomework.amount) || vocabList.length;
+    const correct = vocabList.filter(v => v.correct).length;
     set(ref(db, `userHomework/${userKeyFromEmail(loginEmail)}/${activeHomework.id}`), {
-      progress: correct,
-      finished: correct >= total,
-      fake: false,
-      completedAt: correct >= total ? Date.now() : null,
-      lastScore: score
-    }).catch(console.error);
+      progress: correct, finished: correct >= total, fake: false,
+      completedAt: correct >= total ? Date.now() : null, lastScore: score
+    }).catch(err => console.error("Homework save error:", err));
   }, [done, activeHomework, loggedIn, isMultiplayerMode, vocabList, loginEmail, score]);
 
   // ---------------------- Singleplayer/core gameplay
@@ -1013,6 +1015,18 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
             style={styles.input}
           />
 
+          <div style={{ marginBottom: 10 }}>
+            <label style={{ marginRight: 12 }}>
+              <input type="radio" checked={loginRole === "student"} onChange={() => setLoginRole("student")} /> Schüler
+            </label>
+            <label>
+              <input type="radio" checked={loginRole === "teacher"} onChange={() => setLoginRole("teacher")} /> Lehrer
+            </label>
+          </div>
+          {loginRole === "teacher" && (
+            <p style={styles.smallMuted}>Lehrer-Code: <b>Host</b></p>
+          )}
+
           <input
             type="password"
             placeholder="Passwort"
@@ -1040,7 +1054,7 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
 	      <div style={{ position: "absolute", right: 20, top: 10 }}>
         {loggedIn ? (
           <>
-            <span style={{ marginRight: 8 }}>{multiusername} {isTeacher ? "👨‍🏫" : "👨‍🎓"}</span>
+            <span style={{ marginRight: 8 }}>{multiusername}</span>
             <button style={{ padding: "6px 10px", cursor: "pointer" }} onClick={handleLogout}>Logout</button>
           </>
         ) : null}
@@ -1100,45 +1114,42 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
         </div>
       )}
 
-      {loggedIn && (
-        <div style={styles.lobbyBox}>
+      {/* Homework is available from Singleplayer menu */}
+      {loggedIn && !started && !isMultiplayerMode && (
+        <div style={styles.box}>
           <h3>📚 Hausaufgaben</h3>
           {isTeacher && (
-            <div>
+            <>
               <button type="button" style={styles.button} onClick={() => setShowHomeworkCreator(v => !v)}>
                 {showHomeworkCreator ? "Ersteller schließen" : "Neue Hausaufgabe erstellen"}
               </button>
               {showHomeworkCreator && (
-                <div style={{ marginTop: 10, padding: 10, background: "#f7f7f7", borderRadius: 8 }}>
+                <div style={{ marginTop: 10 }}>
                   <input value={homeworkTitle} onChange={e => setHomeworkTitle(e.target.value)} placeholder="Titel" style={styles.input} />
                   <select value={homeworkSet} onChange={e => setHomeworkSet(e.target.value)} style={styles.input}>
-                    {Object.keys(SETS).filter(k => k !== "irgendwas").map(k => <option key={k} value={k}>{k}</option>)}
-                    <option value="irgendwas">Zufällige Vokabeln</option>
+                    {Object.keys(SETS).map(k => <option key={k} value={k}>{k}</option>)}
                   </select>
-                  <input type="number" min="1" max="50" value={homeworkAmount} onChange={e => setHomeworkAmount(e.target.value)} style={styles.input} />
+                  <input type="number" min="1" max="50" value={homeworkAmount} onChange={e => setHomeworkAmount(e.target.value)} style={styles.input} placeholder="Anzahl Vokabeln" />
                   <input type="date" value={homeworkDue} onChange={e => setHomeworkDue(e.target.value)} style={styles.input} />
-                  <button type="button" style={styles.button} onClick={createHomework}>Speichern</button>
+                  <button type="button" style={styles.button} onClick={createHomework}>Hausaufgabe speichern</button>
                 </div>
               )}
-            </div>
+            </>
           )}
-          {Object.keys(homework).length === 0 ? <p style={styles.smallMuted}>Keine Hausaufgaben.</p> : Object.values(homework).filter(h => h.active !== false).sort((a,b) => (b.createdAt||0)-(a.createdAt||0)).map(hw => {
+          {Object.keys(homework).length === 0 ? <p style={styles.smallMuted}>Keine Hausaufgaben vorhanden.</p> : Object.values(homework).sort((a,b) => (b.createdAt||0)-(a.createdAt||0)).map(hw => {
             const progress = homeworkProgress[hw.id]?.progress || 0;
             const finished = homeworkProgress[hw.id]?.finished === true;
-            return (
-              <div key={hw.id} style={{ ...styles.card, textAlign: "left" }}>
-                <strong>📚 {hw.title}</strong><br />
-                Set: {hw.setName} · Ziel: {hw.amount} Vokabeln<br />
-                Fortschritt: {Math.min(progress, hw.amount)} / {hw.amount}
-                {hw.due && <><br />Abgabe: {hw.due}</>}
-                <div style={{ marginTop: 8 }}>
-                  {!finished && <button type="button" style={styles.buttonSmall} onClick={() => startHomework(hw)}>Starten</button>}
-                  {finished && <span style={{ color: "#16833b", fontWeight: "bold" }}>✅ Erledigt</span>}
-                  {isAlex && !finished && <button type="button" style={{ ...styles.buttonSmall, background: "#d32f2f" }} onClick={() => fakeDoHomework(hw)}>🧪 Fake Do Homework</button>}
-                  {isTeacher && <button type="button" style={{ ...styles.buttonSmall, background: "#777" }} onClick={() => deleteHomework(hw)}>Löschen</button>}
-                </div>
+            return <div key={hw.id} style={styles.card}>
+              <b>{hw.title}</b><br />
+              {hw.setName} · {hw.amount} Vokabeln<br />
+              Fortschritt: {Math.min(progress, hw.amount)} / {hw.amount}
+              {hw.due && <><br />Abgabe: {hw.due}</>}
+              <div>
+                {!finished && <button type="button" style={styles.buttonSmall} onClick={() => startHomework(hw)}>Starten</button>}
+                {finished && <span style={{ color: "green", fontWeight: "bold" }}>✅ Erledigt</span>}
+                {isAlex && !finished && <button type="button" style={{ ...styles.buttonSmall, background: "#d32f2f" }} onClick={() => fakeDoHomework(hw)}>🧪 Fake Do Homework</button>}
               </div>
-            );
+            </div>;
           })}
         </div>
       )}
