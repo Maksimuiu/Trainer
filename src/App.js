@@ -196,6 +196,17 @@ export default function App() {
   const [autoAdvance, setAutoAdvance] = useState(true);
   const [bonusRoundActive, setBonusRoundActive] = useState(false);
 
+  // ---------- Homework / saved accounts
+  const [homework, setHomework] = useState({});
+  const [homeworkProgress, setHomeworkProgress] = useState({});
+  const [homeworkTitle, setHomeworkTitle] = useState("");
+  const [homeworkSet, setHomeworkSet] = useState("Unit 2");
+  const [homeworkAmount, setHomeworkAmount] = useState(3);
+  const [homeworkDue, setHomeworkDue] = useState("");
+  const [showHomeworkCreator, setShowHomeworkCreator] = useState(false);
+  const [activeHomework, setActiveHomework] = useState(null);
+  const [isAlex, setIsAlex] = useState(false);
+
   // set-picker modal short state
   const [setLoading, setSetLoading] = useState(false);
 
@@ -248,42 +259,56 @@ export default function App() {
 const isValidSchoolEmail = (email) => typeof email === "string" && email.trim().toLowerCase().endsWith("@evgbm.net");
 const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.test(pw);
  // ---------------------- LOGIN HANDLER
+  const userKeyFromEmail = (email) => encodeURIComponent((email || "").trim().toLowerCase());
+
   const handleLogin = async () => {
     if (!isValidSchoolEmail(loginEmail)) {
-      console.log("E-Mail muss auf @evgbm.net enden.");
-	  alert("E-Mail falsch");
+      alert("E-Mail muss auf @evgbm.net enden.");
       return;
     }
     if (!isValidPassword(loginPassword)) {
-      console.log("Passwort muss min. 8 Zeichen/Zahlen enthalten (keine Sonderzeichen).");
-	  alert("Passwort falsch");
+      alert("Passwort muss genau 8 Zeichen/Zahlen enthalten (keine Sonderzeichen).");
       return;
     }
 
     try {
-      const userRef = push(ref(db, "users"));
-      await set(userRef, {
-        email: loginEmail,
-        password: loginPassword,
-        createdAt: Date.now()
-      });
+      const email = loginEmail.trim().toLowerCase();
+      const userKey = userKeyFromEmail(email);
+      const userRef = ref(db, `users/${userKey}`);
+      const snap = await get(userRef);
+      let user;
 
-      setUsername(loginEmail.split("@")[0]);
-	  setmultiUsername(loginEmail.split("@")[0]);
+      if (snap.exists()) {
+        user = snap.val();
+        if (user.password !== loginPassword) {
+          alert("Falsches Passwort.");
+          return;
+        }
+      } else {
+        user = {
+          email,
+          password: loginPassword,
+          username: email.split("@")[0],
+          role: email === "alexmaxi14@evgbm.net" ? "teacher" : "student",
+          createdAt: Date.now()
+        };
+        await set(userRef, user);
+      }
+
+      const teacher = user.role === "teacher" || email === "alexmaxi14@evgbm.net";
+      const name = user.username || email.split("@")[0];
+      setUsername(name);
+      setmultiUsername(name);
       setLoggedIn(true);
+      setIsTeacher(teacher);
+      setIsAlex(email === "alexmaxi14@evgbm.net");
       setShowLoginMenu(false);
-
-      // after successful login open multiplayer menu (placeholder)
-      setTimeout(() => {
-        console.log("Eingeloggt — Multiplayer-Menü würde geöffnet werden.");
-		setIsMultiplayerMode(true);
-      }, 50);
+      setIsMultiplayerMode(true);
     } catch (err) {
       console.error(err);
       alert("Fehler beim Speichern in Firebase.");
     }
   };
-
   const handleCancelLogin = () => {
     setShowLoginMenu(false);
   };
@@ -291,8 +316,107 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
   const handleLogout = () => {
     setLoggedIn(false);
     setUsername("");
+    setmultiUsername("");
+    setIsTeacher(false);
+    setIsAlex(false);
+    setHomework({});
+    setHomeworkProgress({});
+    setActiveHomework(null);
+    setIsMultiplayerMode(false);
   };
 
+
+  // ---------------------- Homework
+  const createHomework = async () => {
+    if (!loggedIn || !isTeacher) return alert("Nur Lehrer können Hausaufgaben erstellen.");
+    if (!homeworkTitle.trim()) return alert("Bitte einen Titel eingeben.");
+    const amount = Math.max(1, Math.min(50, Number(homeworkAmount) || 1));
+    try {
+      const newRef = push(ref(db, "homework"));
+      await set(newRef, {
+        title: homeworkTitle.trim(),
+        setName: homeworkSet,
+        amount,
+        due: homeworkDue || "",
+        createdBy: username,
+        createdByEmail: loginEmail.trim().toLowerCase(),
+        createdAt: Date.now(),
+        active: true
+      });
+      setHomeworkTitle("");
+      setHomeworkAmount(3);
+      setHomeworkDue("");
+      setShowHomeworkCreator(false);
+      alert("Hausaufgabe erstellt.");
+    } catch (err) {
+      console.error(err);
+      alert("Hausaufgabe konnte nicht erstellt werden.");
+    }
+  };
+
+  const startHomework = async (hw) => {
+    try {
+      const amount = Math.max(1, Number(hw.amount) || 1);
+      let words;
+      if (hw.setName === "irgendwas") words = await mixSetsRandomly(["random"], amount);
+      else {
+        const res = await fetch(SETS[hw.setName]);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        words = parseVocab(await res.text()).sort(() => Math.random() - 0.5).slice(0, amount);
+      }
+      if (!words.length) return alert("Keine Vokabeln für diese Hausaufgabe gefunden.");
+      setActiveHomework(hw);
+      startSession(words);
+      setIsMultiplayerMode(false);
+    } catch (err) {
+      console.error(err);
+      alert("Hausaufgabe konnte nicht geladen werden.");
+    }
+  };
+
+  const fakeDoHomework = async (hw) => {
+    if (!isAlex) return;
+    const key = userKeyFromEmail(loginEmail);
+    await set(ref(db, `userHomework/${key}/${hw.id}`), {
+      progress: Number(hw.amount) || 0,
+      finished: true,
+      fake: true,
+      completedAt: Date.now()
+    });
+    alert("Hausaufgabe als erledigt markiert (FAKE).");
+  };
+
+  const deleteHomework = async (hw) => {
+    if (!isTeacher || !hw.id) return;
+    if (!window.confirm(`Hausaufgabe \"${hw.title}\" löschen?`)) return;
+    await remove(ref(db, `homework/${hw.id}`));
+  };
+
+  useEffect(() => {
+    if (!loggedIn) { setHomework({}); return undefined; }
+    return onValue(ref(db, "homework"), snap => {
+      const raw = snap.val() || {};
+      setHomework(Object.fromEntries(Object.entries(raw).map(([id, value]) => [id, { ...value, id }])));
+    });
+  }, [loggedIn]);
+
+  useEffect(() => {
+    if (!loggedIn || !loginEmail) { setHomeworkProgress({}); return undefined; }
+    return onValue(ref(db, `userHomework/${userKeyFromEmail(loginEmail)}`), snap => setHomeworkProgress(snap.val() || {}));
+  }, [loggedIn, loginEmail]);
+
+  useEffect(() => {
+    if (!done || !activeHomework || !loggedIn || isMultiplayerMode) return;
+    const correct = vocabList.filter(v => v.correct).length;
+    const total = Number(activeHomework.amount) || vocabList.length;
+    set(ref(db, `userHomework/${userKeyFromEmail(loginEmail)}/${activeHomework.id}`), {
+      progress: correct,
+      finished: correct >= total,
+      fake: false,
+      completedAt: correct >= total ? Date.now() : null,
+      lastScore: score
+    }).catch(console.error);
+  }, [done, activeHomework, loggedIn, isMultiplayerMode, vocabList, loginEmail, score]);
 
   // ---------------------- Singleplayer/core gameplay
   const startSession = (providedList = null) => {
@@ -470,6 +594,7 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
     setPendingBonusPoints(0);
     setEmojiAnimating(false);
     setMultiplayerResultsVisible(false);
+    setActiveHomework(null);
   };
 
 
@@ -915,7 +1040,7 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
 	      <div style={{ position: "absolute", right: 20, top: 10 }}>
         {loggedIn ? (
           <>
-            <span style={{ marginRight: 8 }}>{multiusername}</span>
+            <span style={{ marginRight: 8 }}>{multiusername} {isTeacher ? "👨‍🏫" : "👨‍🎓"}</span>
             <button style={{ padding: "6px 10px", cursor: "pointer" }} onClick={handleLogout}>Logout</button>
           </>
         ) : null}
@@ -972,6 +1097,49 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
           <div style={{ marginTop: 10 }}>
             <button type="button" style={styles.button} onClick={() => startSession(vocabList.length ? vocabList : null)}>Start (Singleplayer)</button>
           </div>
+        </div>
+      )}
+
+      {loggedIn && (
+        <div style={styles.lobbyBox}>
+          <h3>📚 Hausaufgaben</h3>
+          {isTeacher && (
+            <div>
+              <button type="button" style={styles.button} onClick={() => setShowHomeworkCreator(v => !v)}>
+                {showHomeworkCreator ? "Ersteller schließen" : "Neue Hausaufgabe erstellen"}
+              </button>
+              {showHomeworkCreator && (
+                <div style={{ marginTop: 10, padding: 10, background: "#f7f7f7", borderRadius: 8 }}>
+                  <input value={homeworkTitle} onChange={e => setHomeworkTitle(e.target.value)} placeholder="Titel" style={styles.input} />
+                  <select value={homeworkSet} onChange={e => setHomeworkSet(e.target.value)} style={styles.input}>
+                    {Object.keys(SETS).filter(k => k !== "irgendwas").map(k => <option key={k} value={k}>{k}</option>)}
+                    <option value="irgendwas">Zufällige Vokabeln</option>
+                  </select>
+                  <input type="number" min="1" max="50" value={homeworkAmount} onChange={e => setHomeworkAmount(e.target.value)} style={styles.input} />
+                  <input type="date" value={homeworkDue} onChange={e => setHomeworkDue(e.target.value)} style={styles.input} />
+                  <button type="button" style={styles.button} onClick={createHomework}>Speichern</button>
+                </div>
+              )}
+            </div>
+          )}
+          {Object.keys(homework).length === 0 ? <p style={styles.smallMuted}>Keine Hausaufgaben.</p> : Object.values(homework).filter(h => h.active !== false).sort((a,b) => (b.createdAt||0)-(a.createdAt||0)).map(hw => {
+            const progress = homeworkProgress[hw.id]?.progress || 0;
+            const finished = homeworkProgress[hw.id]?.finished === true;
+            return (
+              <div key={hw.id} style={{ ...styles.card, textAlign: "left" }}>
+                <strong>📚 {hw.title}</strong><br />
+                Set: {hw.setName} · Ziel: {hw.amount} Vokabeln<br />
+                Fortschritt: {Math.min(progress, hw.amount)} / {hw.amount}
+                {hw.due && <><br />Abgabe: {hw.due}</>}
+                <div style={{ marginTop: 8 }}>
+                  {!finished && <button type="button" style={styles.buttonSmall} onClick={() => startHomework(hw)}>Starten</button>}
+                  {finished && <span style={{ color: "#16833b", fontWeight: "bold" }}>✅ Erledigt</span>}
+                  {isAlex && !finished && <button type="button" style={{ ...styles.buttonSmall, background: "#d32f2f" }} onClick={() => fakeDoHomework(hw)}>🧪 Fake Do Homework</button>}
+                  {isTeacher && <button type="button" style={{ ...styles.buttonSmall, background: "#777" }} onClick={() => deleteHomework(hw)}>Löschen</button>}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
