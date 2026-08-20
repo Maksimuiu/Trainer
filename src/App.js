@@ -164,7 +164,6 @@ export default function App() {
   const [languageLabel, setLanguageLabel] = useState("");
   const [titleClicks, setTitleClicks] = useState(0);
   const [pendingBonusPoints, setPendingBonusPoints] = useState(0);
-  const [isAlex, setIsAlex] = useState(false);
 
   // end animation / smiley control
   const [showEmoji, setShowEmoji] = useState(false);
@@ -335,7 +334,6 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
         }
         setLoggedIn(true);
         setIsTeacher(true);
-        setIsAlex(false);
         setUsername("Lehrer");
         setmultiUsername("Lehrer");
         setShowHomeworkLogin(false);
@@ -377,7 +375,6 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
       setmultiUsername(user.username || email.split("@")[0]);
       setLoggedIn(true);
       setIsTeacher(user.role === "teacher");
-      setIsAlex(email === "alexmaxi14@evgbm.net");
       setShowHomeworkLogin(false);
       setShowHomeworkPanel(true);
     } catch (err) {
