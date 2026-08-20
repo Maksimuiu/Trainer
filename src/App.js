@@ -47,6 +47,7 @@ const SETS = {
   "Unit 1Story":"https://raw.githubusercontent.com/Maksimuiu/voka/main/Unit%201%20Story",
   "Unit 3Story": "https://raw.githubusercontent.com/Maksimuiu/voka/main/Unit%203%20Story",
   "Dare": "https://raw.githubusercontent.com/Maksimuiu/voka/main/Dare",
+  "Unit 2  want - wait": "https://raw.githubusercontent.com/Maksimuiu/voka/main/Unit%202%20%20want%20-%20wait",	
   "irgendwas": "random"
 };
 
@@ -199,7 +200,7 @@ export default function App() {
   const [setLoading, setSetLoading] = useState(false);
 
   // ---------- Vocab helpers
-  const addVocabFromInput = () => {
+  /*const addVocabFromInput = () => {
     const parsed = parseVocab(vocabText);
     if (parsed.length === 0) {
       alert("Bitte Vokabeln im Format 'Deutsch,Englisch' eingeben (eine pro Zeile).");
@@ -208,7 +209,7 @@ export default function App() {
     const prepared = parsed.map((v) => ({ ...v, answered: false, correct: false, userAnswer: "" }));
     setVocabList(prepared.slice(0, 50));
     alert(`Hinzugefügt: ${prepared.length} Vokabeln (max 50 verwendet).`);
-  };
+  };*/
 
   const mixSetsRandomly = async (setNames, amountPerSet = 5) => {
     if (setNames.includes("random")) {
