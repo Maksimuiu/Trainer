@@ -388,7 +388,7 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
 
   const deleteHomework = async (hw) => {
     if (!isTeacher || !hw.id) return;
-    if (!window.confirm(`Hausaufgabe \"${hw.title}\" löschen?`)) return;
+    if (!window.confirm(`Hausaufgabe "${hw.title}" löschen?`)) return;
     await remove(ref(db, `homework/${hw.id}`));
   };
 
