@@ -575,6 +575,16 @@ export default function App() {
           loginPassword
         );
 
+        const uid = cred.user.uid;
+
+        await set(ref(db, `users/${uid}`), {
+          uid,
+          email: cred.user.email,
+          username: cred.user.email.split("@")[0],
+          role: "student",
+          createdAt: Date.now()
+        });
+
         const userRef = ref(db, `users/${credential.user.uid}`);
         const snap = await get(userRef);
 
