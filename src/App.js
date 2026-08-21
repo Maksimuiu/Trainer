@@ -1,10 +1,18 @@
 // App.js
+// Vokabeltrainer + Firebase Accounts + Multiplayer + Homework + Admin Panel
+//
+// WICHTIG:
+// 1. Aktiviere in Firebase Authentication -> Sign-in method -> Email/Password.
+// 2. Passwörter werden NICHT in Realtime Database gespeichert.
+// 3. Realtime Database Rules müssen die Rollen ebenfalls absichern.
+// 4. Der Admin ist alexmaxi14@evgbm.net.
+// 5. Admins können Passwörter nicht auslesen, sondern Passwort-Reset-Mails senden.
+
 import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
-// Firebase v9 (modular)
 import { initializeApp } from "firebase/app";
 import {
   getDatabase,
@@ -18,10 +26,21 @@ import {
   remove
 } from "firebase/database";
 
-// ----------------------
-// Konfiguration (Firebase)
+import {
+  getAuth,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  sendPasswordResetEmail
+} from "firebase/auth";
+
+// ============================================================
+// FIREBASE
+// ============================================================
+
 const firebaseConfig = {
-  apiKey: "AIzaSyAhvwwaURB4D9aFtTclXyt8Tdq0b3x76UI",
+  apiKey: "AIzaSyAhvwwaUR4B9dFtTclXyt8Tdq0b3x76UI",
   authDomain: "vokabelnenglish.firebaseapp.com",
   databaseURL: "https://vokabelnenglish-default-rtdb.firebaseio.com",
   projectId: "vokabelnenglish",
@@ -31,57 +50,93 @@ const firebaseConfig = {
   measurementId: "G-YZ9N9ZQZ5M"
 };
 
-// Lehrerpw (fest im Code; empfehlenswert: später Firebase Auth + Security Rules)
-const TEACHER_PASSWORD = "Host";
-
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
+const auth = getAuth(app);
 
-// ----------------------
-// Lernsets (URLs bleiben unverändert wie gewünscht)
+const ADMIN_EMAIL = "alexmaxi14@evgbm.net";
+
+const ROLES = {
+  STUDENT: "student",
+  TEACHER: "teacher",
+  HOST: "host",
+  ADMIN: "admin"
+};
+
+// ============================================================
+// VOKABELSETS
+// ============================================================
+
 const SETS = {
   "Unit 2": "https://raw.githubusercontent.com/Maksimuiu/voka/main/Unit2",
   "2b": "https://raw.githubusercontent.com/Maksimuiu/voka/main/2b",
   "The Months": "https://raw.githubusercontent.com/Maksimuiu/voka/main/The%20Months",
   "Food": "https://raw.githubusercontent.com/Maksimuiu/voka/main/Food",
-  "Unit 1Story":"https://raw.githubusercontent.com/Maksimuiu/voka/main/Unit%201%20Story",
+  "Unit 1Story": "https://raw.githubusercontent.com/Maksimuiu/voka/main/Unit%201%20Story",
   "Unit 3Story": "https://raw.githubusercontent.com/Maksimuiu/voka/main/Unit%203%20Story",
   "Dare": "https://raw.githubusercontent.com/Maksimuiu/voka/main/Dare",
-  "Unit 2  want - wait": "https://raw.githubusercontent.com/Maksimuiu/voka/main/Unit%202%20%20want%20-%20wait",	
+  "Unit 2  want - wait": "https://raw.githubusercontent.com/Maksimuiu/voka/main/Unit%202%20%20want%20-%20wait",
   "irgendwas": "random"
 };
 
-// ----------------------
-// Styles
+// ============================================================
+// STYLES
+// ============================================================
+
 const styles = {
-  container: { fontFamily: "Arial", textAlign: "center", marginTop: 20, paddingBottom: 140 },
+  container: {
+    fontFamily: "Arial, sans-serif",
+    textAlign: "center",
+    marginTop: 20,
+    paddingBottom: 150,
+    minHeight: "100vh",
+    boxSizing: "border-box"
+  },
   box: {
-    width: "360px",
+    width: "380px",
+    maxWidth: "calc(100% - 30px)",
     padding: "15px",
     margin: "12px auto",
     borderRadius: "10px",
     background: "#f2f2f2",
-    boxShadow: "0 3px 10px rgba(0,0,0,0.2)"
+    boxShadow: "0 3px 10px rgba(0,0,0,0.2)",
+    boxSizing: "border-box"
+  },
+  wideBox: {
+    width: "900px",
+    maxWidth: "calc(100% - 30px)",
+    padding: "20px",
+    margin: "12px auto",
+    borderRadius: "12px",
+    background: "#fff",
+    boxShadow: "0 3px 14px rgba(0,0,0,0.12)",
+    boxSizing: "border-box",
+    textAlign: "left"
   },
   input: {
     width: "320px",
+    maxWidth: "100%",
     padding: "10px",
     marginBottom: "10px",
     borderRadius: "5px",
     border: "1px solid #aaa",
-    fontSize: "14px"
+    fontSize: "14px",
+    boxSizing: "border-box"
   },
   textarea: {
     width: "320px",
+    maxWidth: "100%",
     padding: "10px",
     borderRadius: "5px",
     border: "1px solid #aaa",
     fontSize: "14px",
     marginBottom: "10px",
-    resize: "none"
+    resize: "vertical",
+    boxSizing: "border-box"
   },
   button: {
     width: "320px",
+    maxWidth: "100%",
     padding: "10px",
     marginTop: "5px",
     borderRadius: "5px",
@@ -92,6 +147,7 @@ const styles = {
   },
   buttonSmall: {
     width: "150px",
+    maxWidth: "100%",
     padding: "8px",
     margin: "5px",
     borderRadius: "5px",
@@ -100,7 +156,38 @@ const styles = {
     color: "white",
     cursor: "pointer"
   },
-  flashcards: { maxHeight: "220px", overflowY: "auto", marginBottom: "10px" },
+  danger: {
+    background: "#d93025",
+    color: "#fff",
+    border: "none",
+    borderRadius: 5,
+    padding: "8px 12px",
+    cursor: "pointer",
+    margin: 4
+  },
+  success: {
+    background: "#2dbe60",
+    color: "#fff",
+    border: "none",
+    borderRadius: 5,
+    padding: "8px 12px",
+    cursor: "pointer",
+    margin: 4
+  },
+  orange: {
+    background: "#f39c12",
+    color: "#fff",
+    border: "none",
+    borderRadius: 5,
+    padding: "8px 12px",
+    cursor: "pointer",
+    margin: 4
+  },
+  flashcards: {
+    maxHeight: "220px",
+    overflowY: "auto",
+    marginBottom: "10px"
+  },
   card: {
     padding: "8px",
     marginBottom: "6px",
@@ -115,15 +202,53 @@ const styles = {
     bottom: 20,
     display: "flex",
     justifyContent: "center",
-    gap: 12
+    gap: 12,
+    zIndex: 100
   },
-  smallMuted: { fontSize: 12, color: "#666" },
-  lobbyBox: { width: "520px", padding: "15px", margin: "12px auto", borderRadius: "10px", background: "#fff", boxShadow: "0 3px 12px rgba(0,0,0,0.07)" },
-  playersList: { maxHeight: 200, overflowY: "auto", textAlign: "left" }
+  lobbyBox: {
+    width: "560px",
+    maxWidth: "calc(100% - 30px)",
+    padding: "15px",
+    margin: "12px auto",
+    borderRadius: "10px",
+    background: "#fff",
+    boxShadow: "0 3px 12px rgba(0,0,0,0.07)",
+    boxSizing: "border-box"
+  },
+  playersList: {
+    maxHeight: 200,
+    overflowY: "auto",
+    textAlign: "left"
+  },
+  row: {
+    display: "flex",
+    gap: 8,
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  adminRow: {
+    padding: 10,
+    borderBottom: "1px solid #ddd",
+    display: "flex",
+    gap: 10,
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "space-between"
+  },
+  badge: {
+    display: "inline-block",
+    padding: "4px 8px",
+    borderRadius: 20,
+    background: "#eee",
+    fontSize: 12
+  }
 };
 
-// ----------------------
-// Helpers: parsing/normalize
+// ============================================================
+// HELPERS
+// ============================================================
+
 const parseVocab = (text) =>
   (text || "")
     .split("\n")
@@ -136,7 +261,11 @@ const parseVocab = (text) =>
     .filter(Boolean);
 
 const normalize = (str) =>
-  (str || "").trim().replace(/[.!?]/g, "").replace(/\s+/g, " ").toLowerCase();
+  (str || "")
+    .trim()
+    .replace(/[.!?]/g, "")
+    .replace(/\s+/g, " ")
+    .toLowerCase();
 
 const getValidAnswers = (word) =>
   (word || "").split("/").map((w) => normalize(w));
@@ -144,14 +273,68 @@ const getValidAnswers = (word) =>
 const genLobbyId = () =>
   Math.random().toString(36).substring(2, 8).toUpperCase();
 
-// ----------------------
-// App
+const genHomeworkId = () =>
+  Math.random().toString(36).substring(2, 10).toUpperCase();
+
+const isSchoolEmail = (email) =>
+  typeof email === "string" &&
+  email.trim().toLowerCase().endsWith("@evgbm.net");
+
+const canCreateHomework = (role) =>
+  role === ROLES.ADMIN ||
+  role === ROLES.TEACHER ||
+  role === ROLES.HOST;
+
+const isAdminEmail = (email) =>
+  String(email || "").trim().toLowerCase() === ADMIN_EMAIL;
+
+const defaultHomework = (email) => ({
+  title: "Neue Hausaufgabe",
+  description: "",
+  amount: 3,
+  setName: "Unit 2",
+  vocabText: "",
+  timeLimit: 0,
+  pointsPerCorrect: 1,
+  shuffle: true,
+  allowRetry: true,
+  active: true,
+  createdBy: email,
+  createdAt: Date.now()
+});
+
+// ============================================================
+// APP
+// ============================================================
+
 export default function App() {
-  // ---------- Singleplayer
+  // ----------------------------------------------------------
+  // ACCOUNT
+  // ----------------------------------------------------------
+
+  const [firebaseUser, setFirebaseUser] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  const [showLoginMenu, setShowLoginMenu] = useState(false);
+  const [authMode, setAuthMode] = useState("login");
+
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+
   const [username, setUsername] = useState("");
-  const [vocabText, setVocabText] = useState(""); // textarea content
-  const [vocabList, setVocabList] = useState([]); // active learning list
-  const [multiusername, setmultiUsername] = useState("");
+  const [multiusername, setMultiUsername] = useState("");
+
+  const loggedIn = !!firebaseUser;
+  const isAdmin = !!profile?.isAdmin || isAdminEmail(firebaseUser?.email);
+  const role = isAdmin ? ROLES.ADMIN : profile?.role || ROLES.STUDENT;
+
+  // ----------------------------------------------------------
+  // SINGLEPLAYER
+  // ----------------------------------------------------------
+
+  const [vocabText, setVocabText] = useState("");
+  const [vocabList, setVocabList] = useState([]);
   const [currentCard, setCurrentCard] = useState(null);
   const [answer, setAnswer] = useState("");
   const [score, setScore] = useState(0);
@@ -164,12 +347,14 @@ export default function App() {
   const [languageLabel, setLanguageLabel] = useState("");
   const [titleClicks, setTitleClicks] = useState(0);
   const [pendingBonusPoints, setPendingBonusPoints] = useState(0);
-
-  // end animation / smiley control
   const [showEmoji, setShowEmoji] = useState(false);
   const [emojiAnimating, setEmojiAnimating] = useState(false);
+  const [setLoading, setSetLoading] = useState(false);
 
-  // ---------- Multiplayer / Teacher
+  // ----------------------------------------------------------
+  // MULTIPLAYER
+  // ----------------------------------------------------------
+
   const [isMultiplayerMode, setIsMultiplayerMode] = useState(false);
   const [lobbyId, setLobbyId] = useState("");
   const [joinLobbyId, setJoinLobbyId] = useState("");
@@ -180,350 +365,433 @@ export default function App() {
   const [playersLocal, setPlayersLocal] = useState({});
   const [timeLeft, setTimeLeft] = useState(0);
   const [multiplayerResultsVisible, setMultiplayerResultsVisible] = useState(false);
-  const roundTimerRef = useRef(null);
 
-  // LOGIN STATE (for multiplayer gating)
-  const [showLoginMenu, setShowLoginMenu] = useState(false);
-  const [showHomeworkLogin, setShowHomeworkLogin] = useState(false);
-  const [homeworkLoginRole, setHomeworkLoginRole] = useState("student");
-  const [homeworkCode, setHomeworkCode] = useState("");
-  const [homework, setHomework] = useState({});
-  const [homeworkProgress, setHomeworkProgress] = useState({});
-  const [showHomeworkPanel, setShowHomeworkPanel] = useState(false);
-  const [homeworkTitle, setHomeworkTitle] = useState("");
-  const [homeworkSet, setHomeworkSet] = useState("Unit 2");
-  const [homeworkAmount, setHomeworkAmount] = useState(3);
-  const [homeworkDue, setHomeworkDue] = useState("");
-  const [activeHomework, setActiveHomework] = useState(null);
-  const [loggedIn, setLoggedIn] = useState(false);
-  const [loginEmail, setLoginEmail] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
-  //const [username, setUsername] = useState("");
-
-  // teacher login
-  const [isTeacher, setIsTeacher] = useState(false);
-
-  // teacher UI controls
   const [autoAdvance, setAutoAdvance] = useState(true);
   const [bonusRoundActive, setBonusRoundActive] = useState(false);
 
-  // set-picker modal short state
-  const [setLoading, setSetLoading] = useState(false);
+  const roundTimerRef = useRef(null);
+  const lobbyListenerRef = useRef(null);
+  const monitorListenerRef = useRef(null);
 
-  // ---------- Vocab helpers
+  // ----------------------------------------------------------
+  // HOMEWORK
+  // ----------------------------------------------------------
 
+  const [homeworkList, setHomeworkList] = useState([]);
+  const [homeworkView, setHomeworkView] = useState(false);
+  const [homeworkEditorOpen, setHomeworkEditorOpen] = useState(false);
+  const [homeworkEditor, setHomeworkEditor] = useState(defaultHomework(""));
+  const [activeHomework, setActiveHomework] = useState(null);
+  const [homeworkResults, setHomeworkResults] = useState({});
+
+  // ----------------------------------------------------------
+  // ADMIN
+  // ----------------------------------------------------------
+
+  const [adminOpen, setAdminOpen] = useState(false);
+  const [allUsers, setAllUsers] = useState({});
+  const [allHomework, setAllHomework] = useState({});
+  const [adminTab, setAdminTab] = useState("users");
+
+  // ----------------------------------------------------------
+  // ACCOUNT AUTH LISTENER
+  // ----------------------------------------------------------
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setFirebaseUser(user);
+
+      if (!user) {
+        setProfile(null);
+        setUsername("");
+        setMultiUsername("");
+        setAuthLoading(false);
+        return;
+      }
+
+      try {
+        const userRef = ref(db, `users/${user.uid}`);
+        const snap = await get(userRef);
+
+        let p = snap.exists() ? snap.val() : null;
+
+        if (!p) {
+          p = {
+            uid: user.uid,
+            email: user.email,
+            username: user.email.split("@")[0],
+            role: isAdminEmail(user.email) ? ROLES.ADMIN : ROLES.STUDENT,
+            isAdmin: isAdminEmail(user.email),
+            blocked: false,
+            createdAt: Date.now(),
+            lastLogin: Date.now()
+          };
+
+          await set(userRef, p);
+        } else {
+          const updates = {
+            lastLogin: Date.now()
+          };
+
+          if (isAdminEmail(user.email)) {
+            updates.role = ROLES.ADMIN;
+            updates.isAdmin = true;
+          }
+
+          await update(userRef, updates);
+          p = { ...p, ...updates };
+        }
+
+        setProfile(p);
+        setUsername(p.username || user.email.split("@")[0]);
+        setMultiUsername(p.username || user.email.split("@")[0]);
+
+        if (p.blocked) {
+          alert("Dieses Konto wurde gesperrt.");
+          await signOut(auth);
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Profil konnte nicht geladen werden.");
+      }
+
+      setAuthLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // ----------------------------------------------------------
+  // LOAD HOMEWORK
+  // ----------------------------------------------------------
+
+  useEffect(() => {
+    if (!firebaseUser) {
+      setHomeworkList([]);
+      return;
+    }
+
+    const homeworkRef = ref(db, "homework");
+
+    const unsubscribe = onValue(homeworkRef, (snap) => {
+      const data = snap.val() || {};
+
+      const arr = Object.entries(data)
+        .map(([id, value]) => ({ id, ...value }))
+        .filter((h) => h.active !== false);
+
+      setHomeworkList(arr);
+      setAllHomework(data);
+    });
+
+    return () => unsubscribe();
+  }, [firebaseUser]);
+
+  // ----------------------------------------------------------
+  // ADMIN USER LIST
+  // ----------------------------------------------------------
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setAllUsers({});
+      return;
+    }
+
+    const usersRef = ref(db, "users");
+
+    const unsubscribe = onValue(usersRef, (snap) => {
+      setAllUsers(snap.val() || {});
+    });
+
+    return () => unsubscribe();
+  }, [isAdmin]);
+
+  // ----------------------------------------------------------
+  // HOMEWORK RESULTS
+  // ----------------------------------------------------------
+
+  useEffect(() => {
+    if (!firebaseUser) return;
+
+    const resultsRef = ref(db, `homeworkResults/${firebaseUser.uid}`);
+
+    const unsubscribe = onValue(resultsRef, (snap) => {
+      setHomeworkResults(snap.val() || {});
+    });
+
+    return () => unsubscribe();
+  }, [firebaseUser]);
+
+  // ==========================================================
+  // AUTH
+  // ==========================================================
+
+  const handleAuth = async () => {
+    const email = loginEmail.trim().toLowerCase();
+
+    if (!isSchoolEmail(email)) {
+      alert("Bitte eine @evgbm.net Schul-E-Mail verwenden.");
+      return;
+    }
+
+    if (loginPassword.length < 8) {
+      alert("Das Passwort muss mindestens 8 Zeichen haben.");
+      return;
+    }
+
+    try {
+      if (authMode === "register") {
+        const credential = await createUserWithEmailAndPassword(
+          auth,
+          email,
+          loginPassword
+        );
+
+        const user = credential.user;
+
+        const userData = {
+          uid: user.uid,
+          email,
+          username: email.split("@")[0],
+          role: isAdminEmail(email) ? ROLES.ADMIN : ROLES.STUDENT,
+          isAdmin: isAdminEmail(email),
+          blocked: false,
+          createdAt: Date.now(),
+          lastLogin: Date.now()
+        };
+
+        await set(ref(db, `users/${user.uid}`), userData);
+
+        setShowLoginMenu(false);
+        setLoginPassword("");
+        alert("Konto erstellt und eingeloggt.");
+      } else {
+        // WICHTIG:
+        // Hier wird KEIN neues Konto angelegt.
+        // Firebase prüft, ob das Konto bereits existiert.
+        const credential = await signInWithEmailAndPassword(
+          auth,
+          email,
+          loginPassword
+        );
+
+        const userRef = ref(db, `users/${credential.user.uid}`);
+        const snap = await get(userRef);
+
+        if (snap.exists() && snap.val().blocked) {
+          await signOut(auth);
+          alert("Dieses Konto ist gesperrt.");
+          return;
+        }
+
+        setShowLoginMenu(false);
+        setLoginPassword("");
+      }
+    } catch (err) {
+      console.error(err);
+
+      if (err.code === "auth/email-already-in-use") {
+        alert("Dieses Konto existiert bereits. Bitte einloggen.");
+      } else if (
+        err.code === "auth/invalid-credential" ||
+        err.code === "auth/wrong-password" ||
+        err.code === "auth/user-not-found"
+      ) {
+        alert("E-Mail oder Passwort falsch.");
+      } else if (err.code === "auth/weak-password") {
+        alert("Das Passwort ist zu schwach.");
+      } else {
+        alert(`Login-Fehler: ${err.message}`);
+      }
+    }
+  };
+
+  const handlePasswordReset = async () => {
+    const email = loginEmail.trim().toLowerCase();
+
+    if (!isSchoolEmail(email)) {
+      alert("Bitte zuerst deine @evgbm.net E-Mail eingeben.");
+      return;
+    }
+
+    try {
+      await sendPasswordResetEmail(auth, email);
+      alert("Eine Passwort-Reset-Mail wurde angefordert.");
+    } catch (err) {
+      console.error(err);
+      alert("Passwort-Reset konnte nicht gesendet werden.");
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setAdminOpen(false);
+      setHomeworkView(false);
+      setIsMultiplayerMode(false);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // ==========================================================
+  // VOCAB
+  // ==========================================================
+
+  const addVocabFromInput = () => {
+    const parsed = parseVocab(vocabText);
+
+    if (parsed.length === 0) {
+      alert("Bitte Deutsch,Englisch eingeben.");
+      return;
+    }
+
+    const prepared = parsed
+      .map((v) => ({
+        ...v,
+        answered: false,
+        correct: false,
+        userAnswer: ""
+      }))
+      .slice(0, 50);
+
+    setVocabList(prepared);
+    alert(`Hinzugefügt: ${prepared.length} Vokabeln.`);
+  };
 
   const mixSetsRandomly = async (setNames, amountPerSet = 5) => {
     if (setNames.includes("random")) {
       setNames = Object.keys(SETS).filter((s) => SETS[s] !== "random");
       amountPerSet = Math.ceil(20 / setNames.length);
     }
+
     let result = [];
-    for (let name of setNames) {
-      const res = await fetch(SETS[name]);
-      const text = await res.text();
-      const words = parseVocab(text);
-      const random = words.sort(() => 0.5 - Math.random()).slice(0, amountPerSet);
-      result.push(...random);
+
+    for (const name of setNames) {
+      try {
+        const res = await fetch(SETS[name]);
+        const text = await res.text();
+        const words = parseVocab(text);
+
+        const random = [...words]
+          .sort(() => 0.5 - Math.random())
+          .slice(0, amountPerSet);
+
+        result.push(...random);
+      } catch (err) {
+        console.error("Set konnte nicht geladen werden:", name, err);
+      }
     }
+
     return result.sort(() => 0.5 - Math.random()).slice(0, 20);
   };
 
-  // ---------------------- GitHub import (selectedSet)
   const addGitHubVocab = async () => {
     try {
       setSetLoading(true);
+
       const url = SETS[selectedSet];
 
       if (url === "random") {
         const randomWords = await mixSetsRandomly(["random"], 20);
-        setVocabText(randomWords.map((v) => `${v.de},${v.en}`).join("\n"));
-        setSetLoading(false);
+
+        setVocabText(
+          randomWords.map((v) => `${v.de},${v.en}`).join("\n")
+        );
+
         return;
       }
 
       const res = await fetch(url);
       const text = await res.text();
       const imported = parseVocab(text);
-      // append to existing textarea content (user might have custom vocab)
+
       const existing = parseVocab(vocabText);
       const combined = [...existing, ...imported].slice(0, 50);
-      setVocabText(combined.map((v) => `${v.de},${v.en}`).join("\n"));
+
+      setVocabText(
+        combined.map((v) => `${v.de},${v.en}`).join("\n")
+      );
     } catch (err) {
       console.error(err);
-      alert("Fehler beim Importieren des Sets.");
+      alert("Fehler beim Importieren.");
     } finally {
       setSetLoading(false);
     }
   };
-// ---------------------- LOGIN RULES
-const isValidSchoolEmail = (email) => typeof email === "string" && email.trim().toLowerCase().endsWith("@evgbm.net");
-const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.test(pw);
- // ---------------------- LOGIN HANDLER
-  const handleLogin = async () => {
-    if (!isValidSchoolEmail(loginEmail)) {
-      console.log("E-Mail muss auf @evgbm.net enden.");
-	  alert("E-Mail falsch");
-      return;
-    }
-    if (!isValidPassword(loginPassword)) {
-      console.log("Passwort muss min. 8 Zeichen/Zahlen enthalten (keine Sonderzeichen).");
-	  alert("Passwort falsch");
-      return;
-    }
 
-    try {
-      const userRef = push(ref(db, "users"));
-      await set(userRef, {
-        email: loginEmail,
-        password: loginPassword,
-        createdAt: Date.now()
-      });
+  // ==========================================================
+  // SINGLEPLAYER
+  // ==========================================================
 
-      setUsername(loginEmail.split("@")[0]);
-	  setmultiUsername(loginEmail.split("@")[0]);
-      setLoggedIn(true);
-      setShowLoginMenu(false);
-
-      // after successful login open multiplayer menu (placeholder)
-      setTimeout(() => {
-        console.log("Eingeloggt — Multiplayer-Menü würde geöffnet werden.");
-		setIsMultiplayerMode(true);
-      }, 50);
-    } catch (err) {
-      console.error(err);
-      alert("Fehler beim Speichern in Firebase.");
-    }
-  };
-
-  const handleCancelLogin = () => {
-    setShowLoginMenu(false);
-  };
-
-  const handleLogout = () => {
-    setLoggedIn(false);
-    setUsername("");
-    setmultiUsername("");
-    setIsTeacher(false);
-    setHomeworkCode("");
-    setShowHomeworkPanel(false);
-    setActiveHomework(null);
-  };
-
-
-  // ---------------------- Homework
-  const userKeyFromEmail = (email) => encodeURIComponent((email || "").trim().toLowerCase());
-
-  const openHomework = () => {
-    if (loggedIn) {
-      setShowHomeworkPanel(true);
-      return;
-    }
-    setHomeworkLoginRole("student");
-    setHomeworkCode("");
-    setShowHomeworkLogin(true);
-  };
-
-  const homeworkLogin = async () => {
-    try {
-      if (homeworkLoginRole === "teacher") {
-        // Teacher needs ONLY the hidden code. No email/password.
-        if (homeworkCode !== TEACHER_PASSWORD) {
-          alert("Falscher Lehrer-Code.");
-          return;
-        }
-        setLoggedIn(true);
-        setIsTeacher(true);
-        setUsername("Lehrer");
-        setmultiUsername("Lehrer");
-        setShowHomeworkLogin(false);
-        setShowHomeworkPanel(true);
-        return;
-      }
-
-      const email = loginEmail.trim().toLowerCase();
-      if (!isValidSchoolEmail(email)) {
-        alert("Bitte eine @evgbm.net E-Mail eingeben.");
-        return;
-      }
-      if (!isValidPassword(loginPassword)) {
-        alert("Passwort muss genau 8 Buchstaben/Zahlen enthalten.");
-        return;
-      }
-
-      const userRef = ref(db, `users/${userKeyFromEmail(email)}`);
-      const snapshot = await get(userRef);
-      let user;
-      if (snapshot.exists()) {
-        user = snapshot.val();
-        if (user.password !== loginPassword) {
-          alert("Falsches Passwort.");
-          return;
-        }
-      } else {
-        user = {
-          email,
-          password: loginPassword,
-          username: email.split("@")[0],
-          role: "student",
-          createdAt: Date.now()
-        };
-        await set(userRef, user);
-      }
-
-      setUsername(user.username || email.split("@")[0]);
-      setmultiUsername(user.username || email.split("@")[0]);
-      setLoggedIn(true);
-      setIsTeacher(user.role === "teacher");
-      setShowHomeworkLogin(false);
-      setShowHomeworkPanel(true);
-    } catch (err) {
-      console.error("Homework login error:", err);
-      alert("Firebase-Speicherfehler. Prüfe, ob Realtime Database aktiviert ist und die Rules Lesen/Schreiben erlauben.");
-    }
-  };
-
-  const createHomework = async () => {
-    if (!isTeacher) return alert("Nur Lehrer können Hausaufgaben erstellen.");
-    if (!homeworkTitle.trim()) return alert("Bitte einen Titel eingeben.");
-    try {
-      const homeworkRef = push(ref(db, "homework"));
-      await set(homeworkRef, {
-        title: homeworkTitle.trim(),
-        setName: homeworkSet,
-        amount: Math.max(1, Math.min(50, Number(homeworkAmount) || 1)),
-        due: homeworkDue || "",
-        createdAt: Date.now(),
-        createdBy: username || "Lehrer",
-        active: true
-      });
-      setHomeworkTitle("");
-      setHomeworkAmount(3);
-      setHomeworkDue("");
-      alert("Hausaufgabe erstellt.");
-    } catch (err) {
-      console.error(err);
-      alert("Hausaufgabe konnte nicht gespeichert werden.");
-    }
-  };
-
-  const startHomework = async (hw) => {
-    try {
-      const amount = Math.max(1, Number(hw.amount) || 1);
-      let words = [];
-      if (hw.setName === "irgendwas") {
-        words = await mixSetsRandomly(["random"], amount);
-      } else {
-        const res = await fetch(SETS[hw.setName]);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        words = parseVocab(await res.text()).sort(() => Math.random() - 0.5).slice(0, amount);
-      }
-      if (!words.length) return alert("Keine Vokabeln gefunden.");
-      setActiveHomework(hw);
-      setShowHomeworkPanel(false);
-      setIsMultiplayerMode(false);
-      startSession(words);
-    } catch (err) {
-      console.error(err);
-      alert("Hausaufgabe konnte nicht geladen werden.");
-    }
-  };
-
-  const fakeDoHomework = async (hw) => {
-    if (loginEmail.trim().toLowerCase() !== "alexmaxi14@evgbm.net") return;
-    try {
-      await set(ref(db, `userHomework/${userKeyFromEmail(loginEmail)}/${hw.id}`), {
-        progress: Number(hw.amount) || 0,
-        finished: true,
-        fake: true,
-        completedAt: Date.now()
-      });
-    } catch (err) {
-      console.error(err);
-      alert("Firebase-Speicherfehler.");
-    }
-  };
-
-  useEffect(() => {
-    if (!loggedIn) return undefined;
-    return onValue(ref(db, "homework"), (snap) => {
-      const raw = snap.val() || {};
-      setHomework(Object.fromEntries(Object.entries(raw).map(([id, hw]) => [id, { ...hw, id }])));
-    }, (err) => console.error("Homework read error:", err));
-  }, [loggedIn]);
-
-  useEffect(() => {
-    if (!loggedIn || !loginEmail) return undefined;
-    return onValue(ref(db, `userHomework/${userKeyFromEmail(loginEmail)}`), (snap) => {
-      setHomeworkProgress(snap.val() || {});
-    }, (err) => console.error("Homework progress read error:", err));
-  }, [loggedIn, loginEmail]);
-
-  useEffect(() => {
-    if (!done || !activeHomework || !loggedIn || isMultiplayerMode || !loginEmail) return;
-    const total = Number(activeHomework.amount) || vocabList.length;
-    const correct = vocabList.filter((v) => v.correct).length;
-    set(ref(db, `userHomework/${userKeyFromEmail(loginEmail)}/${activeHomework.id}`), {
-      progress: correct,
-      finished: correct >= total,
-      completedAt: correct >= total ? Date.now() : null,
-      fake: false,
-      lastScore: score
-    }).catch((err) => console.error("Homework progress save error:", err));
-  }, [done, activeHomework, loggedIn, isMultiplayerMode, vocabList, loginEmail, score]);
-
-  // ---------------------- Singleplayer/core gameplay
   const startSession = (providedList = null) => {
-    // Fix: don't start with an empty list — try to parse textarea if necessary
-    let listToUse = Array.isArray(providedList) && providedList.length > 0 ? providedList : [];
+    let listToUse =
+      Array.isArray(providedList) && providedList.length
+        ? providedList
+        : [];
 
-    if (listToUse.length === 0) {
-      // if vocabList state already has items, use those
-      if (vocabList && vocabList.length > 0) {
-        listToUse = vocabList;
-      } else {
-        // try parse from textarea
-        const parsed = parseVocab(vocabText);
-        if (parsed.length > 0) {
-          listToUse = parsed.slice(0, 50);
-        }
+    if (!listToUse.length && vocabList.length) {
+      listToUse = vocabList;
+    }
+
+    if (!listToUse.length) {
+      const parsed = parseVocab(vocabText);
+
+      if (parsed.length) {
+        listToUse = parsed.slice(0, 50);
       }
     }
 
-    if (!listToUse || listToUse.length === 0) {
-      alert("Keine Vokabeln vorhanden. Bitte Vokabeln eingeben oder ein Set importieren.");
+    if (!listToUse.length) {
+      alert("Keine Vokabeln vorhanden.");
       return;
     }
 
-    // Prepare entries
-    const prep = listToUse.map((v) => ({ ...v, answered: false, correct: false, userAnswer: "" })).slice(0, 50);
+    const prep = listToUse
+      .map((v) => ({
+        de: v.de,
+        en: v.en,
+        answered: false,
+        correct: false,
+        userAnswer: ""
+      }))
+      .slice(0, 50);
+
     setVocabList(prep);
     setScore(0);
     setDisplayScore(0);
     setDone(false);
     setStarted(true);
-    setShowHomeworkPanel(false);
     setShowEmoji(false);
     setEmojiAnimating(false);
     setFeedback("");
+
     nextCard(prep);
   };
 
   const nextCard = (list = vocabList) => {
     const remaining = (list || []).filter((v) => !v.answered);
-    if (!remaining || remaining.length === 0) {
-      // end
+
+    if (!remaining.length) {
       setDone(true);
       setCurrentCard(null);
       setShowEmoji(true);
-      // we want final score to animate after emoji — set displayScore to 0 here
       setDisplayScore(0);
       return;
     }
-    const random = remaining[Math.floor(Math.random() * remaining.length)];
+
+    const random =
+      remaining[Math.floor(Math.random() * remaining.length)];
+
     const germanFirst = Math.random() > 0.5;
+
     setShowGermanFirst(germanFirst);
-    setLanguageLabel(germanFirst ? "Deutsch → Englisch" : "Englisch → Deutsch");
+    setLanguageLabel(
+      germanFirst
+        ? "Deutsch → Englisch"
+        : "Englisch → Deutsch"
+    );
+
     setCurrentCard(random);
     setAnswer("");
     setFeedback("");
@@ -531,26 +799,39 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
 
   const checkAnswer = () => {
     if (!currentCard) return;
+
     if (currentCard.answered) {
-      setFeedback("❗ Diese Vokabel wurde bereits beantwortet.");
+      setFeedback("Diese Vokabel wurde bereits beantwortet.");
       return;
     }
 
-    const correctWord = showGermanFirst ? currentCard.en : currentCard.de;
+    const correctWord = showGermanFirst
+      ? currentCard.en
+      : currentCard.de;
+
     const validAnswers = getValidAnswers(correctWord);
     const userNorm = normalize(answer);
 
     const isSpecial = userNorm === "am";
-    const isCorrect = isSpecial || validAnswers.includes(userNorm);
+    const isCorrect =
+      isSpecial || validAnswers.includes(userNorm);
 
-    setFeedback(isCorrect ? "✅ richtig!" : `❌ richtig: ${correctWord}`);
+    setFeedback(
+      isCorrect
+        ? "✅ richtig!"
+        : `❌ richtig: ${correctWord}`
+    );
 
     let addedScore = isCorrect ? 1 : 0;
+
     if (pendingBonusPoints > 0) {
       addedScore += pendingBonusPoints;
       setPendingBonusPoints(0);
     }
-    if (addedScore > 0) setScore((prev) => prev + addedScore);
+
+    if (addedScore > 0) {
+      setScore((prev) => prev + addedScore);
+    }
 
     const updated = vocabList.map((v) =>
       v.de === currentCard.de
@@ -558,79 +839,108 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
             ...v,
             answered: true,
             correct: isCorrect,
-            userAnswer: isSpecial ? correctWord : answer
+            userAnswer: isSpecial
+              ? correctWord
+              : answer
           }
         : v
     );
 
     setVocabList(updated);
-    // small delay so user sees feedback, then next card
+
     setTimeout(() => nextCard(updated), 900);
   };
 
-  // animate score during gameplay (increment displayScore until reaching score)
   useEffect(() => {
-    // only animate live while not in final "done and post-smiley count up"
     if (!done && displayScore < score) {
-      const t = setTimeout(() => setDisplayScore((prev) => prev + 1), 250);
+      const t = setTimeout(
+        () => setDisplayScore((prev) => prev + 1),
+        250
+      );
+
       return () => clearTimeout(t);
     }
   }, [displayScore, score, done]);
 
-  // handle final smiley animation and final score tally
   useEffect(() => {
-    if (done) {
-      // start smiley animation, then after it finishes, count up to final score and show motivation
-      setShowEmoji(true);
-      setEmojiAnimating(true);
+    if (!done) return;
 
-      // duration of smiley animation (ms) — adjust to match framer-motion timings
-      const SMILEY_DURATION = 1200;
+    setShowEmoji(true);
+    setEmojiAnimating(true);
 
-      const id = setTimeout(() => {
-        setEmojiAnimating(false);
-        // animate displayScore from 0 to final score
-        setDisplayScore(0);
-        const total = score;
-        if (total <= 0) {
-          setDisplayScore(0);
+    const duration = 1200;
+
+    const id = setTimeout(() => {
+      setEmojiAnimating(false);
+      setDisplayScore(0);
+
+      const total = score;
+
+      if (total <= 0) return;
+
+      const steps = Math.min(30, total);
+      const increment = Math.ceil(total / steps);
+      const intervalMs = Math.max(
+        30,
+        Math.floor(duration / steps)
+      );
+
+      let current = 0;
+
+      const timer = setInterval(() => {
+        current += increment;
+
+        if (current >= total) {
+          setDisplayScore(total);
+          clearInterval(timer);
         } else {
-          const steps = Math.min(30, total); // cap steps to keep animation reasonable
-          const increment = Math.ceil(total / steps);
-          const intervalMs = Math.max(30, Math.floor(SMILEY_DURATION / steps));
-          let current = 0;
-          const timer = setInterval(() => {
-            current += increment;
-            if (current >= total) {
-              setDisplayScore(total);
-              clearInterval(timer);
-            } else {
-              setDisplayScore(current);
-            }
-          }, intervalMs);
+          setDisplayScore(current);
         }
-      }, SMILEY_DURATION);
+      }, intervalMs);
 
-      return () => clearTimeout(id);
-    }
+      return () => clearInterval(timer);
+    }, duration);
+
+    return () => clearTimeout(id);
   }, [done, score]);
 
   const handleTitleClick = () => {
-    const newClicks = titleClicks + 1;
-    setTitleClicks(newClicks);
-    if (newClicks === 12) setPendingBonusPoints(10);
-    else if (newClicks > 12) setPendingBonusPoints((prev) => prev + 1);
+    const clicks = titleClicks + 1;
+
+    setTitleClicks(clicks);
+
+    if (clicks === 12) {
+      setPendingBonusPoints(10);
+    } else if (clicks > 12) {
+      setPendingBonusPoints((prev) => prev + 1);
+    }
   };
 
-  const getEmoji = () => (score < 5 ? "😢" : score < 10 ? "😐" : "😄");
+  const getEmoji = () =>
+    score < 5 ? "😢" : score < 10 ? "😐" : "😄";
 
   const exportPDF = async () => {
     const element = document.getElementById("flashcards");
-    if (!element) return alert("Keine Flashcards zum Exportieren.");
+
+    if (!element) {
+      alert("Keine Flashcards.");
+      return;
+    }
+
     const canvas = await html2canvas(element);
     const imgData = canvas.toDataURL("image/png");
+
     const pdf = new jsPDF();
-    pdf.addImage(imgData, "PNG", 10, 10, 180, 180);
+
+    pdf.addImage(
+      imgData,
+      "PNG",
+      10,
+      10,
+      180,
+      180
+    );
+
     pdf.save("flashcards.pdf");
   };
 
@@ -649,218 +959,613 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
     setPendingBonusPoints(0);
     setEmojiAnimating(false);
     setMultiplayerResultsVisible(false);
+    setActiveHomework(null);
   };
 
+  // ==========================================================
+  // HOMEWORK CREATION
+  // ==========================================================
 
-  // ---------------------- MULTIPLAYER (Realtime DB) ----------------------
-  // ---------------------- Multiplayer opener
+  const openHomeworkCreator = () => {
+    if (!loggedIn) {
+      alert("Du musst eingeloggt sein.");
+      setShowLoginMenu(true);
+      return;
+    }
+
+    if (!canCreateHomework(role)) {
+      alert("Nur Lehrer, Hosts oder Admins dürfen Hausaufgaben erstellen.");
+      return;
+    }
+
+    setHomeworkEditor({
+      ...defaultHomework(firebaseUser.email),
+      id: genHomeworkId()
+    });
+
+    setHomeworkEditorOpen(true);
+  };
+
+  const saveHomework = async () => {
+    if (!firebaseUser) return;
+
+    if (!canCreateHomework(role)) {
+      alert("Keine Berechtigung.");
+      return;
+    }
+
+    const h = homeworkEditor;
+
+    const amount = Math.max(
+      1,
+      Math.min(100, Number(h.amount) || 3)
+    );
+
+    let vocab = [];
+
+    if (h.vocabText.trim()) {
+      vocab = parseVocab(h.vocabText);
+    } else if (h.setName) {
+      try {
+        const url = SETS[h.setName];
+
+        if (url === "random") {
+          vocab = await mixSetsRandomly(["random"], amount);
+        } else {
+          const res = await fetch(url);
+          const text = await res.text();
+          vocab = parseVocab(text);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    vocab = vocab.slice(0, amount);
+
+    if (!vocab.length) {
+      alert("Keine Vokabeln für die Hausaufgabe gefunden.");
+      return;
+    }
+
+    const homeworkId =
+      h.id || genHomeworkId();
+
+    const data = {
+      ...h,
+      id: homeworkId,
+      amount,
+      vocab,
+      createdBy: firebaseUser.email,
+      createdByRole: role,
+      createdAt: h.createdAt || Date.now(),
+      active: true
+    };
+
+    await set(
+      ref(db, `homework/${homeworkId}`),
+      data
+    );
+
+    setHomeworkEditorOpen(false);
+
+    alert("Hausaufgabe gespeichert.");
+  };
+
+  const deleteHomework = async (id) => {
+    if (!isAdmin && !canCreateHomework(role)) return;
+
+    if (!window.confirm("Hausaufgabe wirklich löschen?")) {
+      return;
+    }
+
+    await remove(ref(db, `homework/${id}`));
+  };
+
+  const toggleHomework = async (id, active) => {
+    if (!canCreateHomework(role)) return;
+
+    await update(
+      ref(db, `homework/${id}`),
+      { active: !active }
+    );
+  };
+
+  // ==========================================================
+  // HOMEWORK PLAY
+  // ==========================================================
+
+  const startHomework = (homework) => {
+    if (!firebaseUser) {
+      setShowLoginMenu(true);
+      return;
+    }
+
+    let list = Array.isArray(homework.vocab)
+      ? [...homework.vocab]
+      : [];
+
+    if (homework.shuffle !== false) {
+      list = list.sort(() => Math.random() - 0.5);
+    }
+
+    list = list.slice(
+      0,
+      Number(homework.amount) || list.length
+    );
+
+    if (!list.length) {
+      alert("Diese Hausaufgabe enthält keine Vokabeln.");
+      return;
+    }
+
+    const prepared = list.map((v) => ({
+      ...v,
+      answered: false,
+      correct: false,
+      userAnswer: ""
+    }));
+
+    setActiveHomework(homework);
+    setHomeworkView(false);
+
+    setVocabList(prepared);
+    setVocabText(
+      prepared.map((v) => `${v.de},${v.en}`).join("\n")
+    );
+
+    setScore(0);
+    setDisplayScore(0);
+    setDone(false);
+    setStarted(true);
+    setShowEmoji(false);
+
+    nextCard(prepared);
+  };
+
+  const finishHomework = async (finalScore, answers) => {
+    if (!firebaseUser || !activeHomework) return;
+
+    const result = {
+      uid: firebaseUser.uid,
+      email: firebaseUser.email,
+      homeworkId: activeHomework.id,
+      homeworkTitle: activeHomework.title,
+      score: finalScore,
+      maxScore:
+        (activeHomework.amount || vocabList.length) *
+        (activeHomework.pointsPerCorrect || 1),
+      answers,
+      completedAt: Date.now()
+    };
+
+    await set(
+      ref(
+        db,
+        `homeworkResults/${firebaseUser.uid}/${activeHomework.id}`
+      ),
+      result
+    );
+  };
+
+  // Wenn eine Hausaufgabe beendet wird, Ergebnis speichern.
+  useEffect(() => {
+    if (!done || !activeHomework) return;
+
+    finishHomework(score, vocabList);
+  }, [done]);
+
+  // ==========================================================
+  // ADMIN
+  // ==========================================================
+
+  const updateUserRole = async (uid, newRole) => {
+    if (!isAdmin) return;
+
+    await update(
+      ref(db, `users/${uid}`),
+      {
+        role: newRole,
+        isAdmin: newRole === ROLES.ADMIN
+      }
+    );
+  };
+
+  const toggleUserBlocked = async (uid, blocked) => {
+    if (!isAdmin) return;
+
+    await update(
+      ref(db, `users/${uid}`),
+      { blocked: !blocked }
+    );
+  };
+
+  const adminPasswordReset = async (email) => {
+    if (!isAdmin) return;
+
+    try {
+      await sendPasswordResetEmail(auth, email);
+      alert(`Passwort-Reset wurde an ${email} gesendet.`);
+    } catch (err) {
+      console.error(err);
+      alert("Passwort-Reset konnte nicht gesendet werden.");
+    }
+  };
+
+  const adminDeleteUserRecord = async (uid) => {
+    if (!isAdmin) return;
+
+    if (
+      !window.confirm(
+        "Das Profil aus der Realtime Database löschen? Das Firebase-Authentication-Konto bleibt bestehen."
+      )
+    ) {
+      return;
+    }
+
+    await remove(ref(db, `users/${uid}`));
+  };
+
+  const simulateHomework = (homework) => {
+    if (!isAdmin) return;
+
+    alert(
+      `Admin-Testmodus:\n\n"${homework.title}" wird jetzt simuliert.`
+    );
+
+    startHomework(homework);
+  };
+
+  // ==========================================================
+  // MULTIPLAYER
+  // ==========================================================
+
   const openMultiplayer = () => {
     if (!loggedIn) {
       setShowLoginMenu(true);
       return;
     }
-    // user already logged in -> open multiplayer menu (placeholder)
-   // alert("Multiplayer-Menü (eingeloggt) — hier kannst du Lobby/Realtime einbauen.");
-   setIsMultiplayerMode(true);
+
+    setIsMultiplayerMode(true);
   };
-  // create lobby (teacher-only: if logged in skip prompt)
-  const createLobby = async (vocabListForLobby) => {
-    // if not teacher, prompt password inline
-    if (!isTeacher) {
-      const pw = prompt("Lehrer-Passwort eingeben (nur Lehrer darf Lobbys erstellen):");
-      if (pw === null) return; // canceled
-      if (pw !== TEACHER_PASSWORD) {
-        alert("Falsches Lehrer-Passwort. Lobby wird nicht erstellt.");
-        return;
-      }
-      setIsTeacher(true);
+
+  const createLobby = async (list) => {
+    if (!loggedIn) {
+      setShowLoginMenu(true);
+      return;
     }
 
-    // proceed to create
+    if (
+      role !== ROLES.ADMIN &&
+      role !== ROLES.TEACHER &&
+      role !== ROLES.HOST
+    ) {
+      alert("Nur Lehrer, Hosts oder Admins dürfen Lobbys erstellen.");
+      return;
+    }
+
     const id = genLobbyId();
+
     setLobbyId(id);
     setIsHost(true);
 
     const lobbyRef = ref(db, `lobbies/${id}`);
+
     const initial = {
       hostId: null,
-      hostPlays: hostPlays,
-      state: "waiting", // waiting | playing | finished
-      vocabList: vocabListForLobby || [],
+      hostPlays,
+      state: "waiting",
+      vocabList: list || [],
       currentIndex: 0,
       roundDeadline: 0,
       createdAt: Date.now(),
-      bonusRoundActive: bonusRoundActive
+      bonusRoundActive
     };
 
     await set(lobbyRef, initial);
 
-    const playerRef = push(ref(db, `lobbies/${id}/players`));
+    const playerRef = push(
+      ref(db, `lobbies/${id}/players`)
+    );
+
     const pid = playerRef.key;
-    const playerObj = {
-      name: username || multiusername,
+
+    await set(playerRef, {
+      name:
+        username ||
+        multiusername ||
+        firebaseUser.email.split("@")[0],
+      email: firebaseUser.email,
       score: 0,
       answeredIndex: -1,
       lastAnswer: "",
       isHost: true,
       joinedAt: Date.now(),
       plays: !!hostPlays
-    };
-    await set(playerRef, playerObj);
-    await update(lobbyRef, { hostId: pid });
+    });
+
+    await update(lobbyRef, {
+      hostId: pid
+    });
+
     setPlayerId(pid);
+
     onDisconnect(playerRef).remove();
+
     listenToLobby(id);
   };
 
   const joinLobby = async (id) => {
-    if (!id) return alert("Bitte Lobby-ID eingeben.");
+    if (!loggedIn) {
+      setShowLoginMenu(true);
+      return;
+    }
+
+    if (!id) {
+      alert("Bitte Lobby-ID eingeben.");
+      return;
+    }
+
     const lobbyRef = ref(db, `lobbies/${id}`);
     const snap = await get(lobbyRef);
-    if (!snap.exists()) return alert("Lobby existiert nicht.");
 
-    const playerRef = push(ref(db, `lobbies/${id}/players`));
+    if (!snap.exists()) {
+      alert("Lobby existiert nicht.");
+      return;
+    }
+
+    const playerRef = push(
+      ref(db, `lobbies/${id}/players`)
+    );
+
     const pid = playerRef.key;
-    const playerObj = {
-      name: username || multiusername,
+
+    await set(playerRef, {
+      name:
+        username ||
+        multiusername ||
+        firebaseUser.email.split("@")[0],
+      email: firebaseUser.email,
       score: 0,
       answeredIndex: -1,
       lastAnswer: "",
       isHost: false,
       joinedAt: Date.now(),
       plays: true
-    };
-    await set(playerRef, playerObj);
+    });
+
     onDisconnect(playerRef).remove();
+
     setPlayerId(pid);
     setLobbyId(id);
     setIsHost(false);
-    listenToLobby(id);
     setJoinLobbyId("");
-			  console.log("join lobby");
+
+    listenToLobby(id);
   };
 
-  // listen to lobby changes
   const listenToLobby = (id) => {
+    if (lobbyListenerRef.current) {
+      lobbyListenerRef.current();
+    }
+
     const lobbyRef = ref(db, `lobbies/${id}`);
-    onValue(lobbyRef, (snapshot) => {
-      const val = snapshot.val();
-      setLobbyData(val || null);
 
-      if (val && val.players) setPlayersLocal(val.players);
-      else setPlayersLocal({});
+    const unsubscribe = onValue(
+      lobbyRef,
+      (snapshot) => {
+        const val = snapshot.val();
 
-      if (val && val.state === "playing") {
-        const idx = val.currentIndex ?? 0;
-        const list = val.vocabList || [];
-        const card = list[idx];
-        if (card) {
-          setVocabList(list.map(v => ({...v, answered:false, correct:false, userAnswer:""})));
-          setStarted(true);
-          setDone(false);
-          setCurrentCard(card);
-          const germanFirst = Math.random() > 0.5;
-          setShowGermanFirst(germanFirst);
-          setLanguageLabel(germanFirst ? "Deutsch → Englisch" : "Englisch → Deutsch");
-          const deadline = val.roundDeadline ?? 0;
-          const left = Math.max(0, Math.round((deadline - Date.now()) / 1000));
-          setTimeLeft(left);
-          startRoundCountdown(deadline);
-          setMultiplayerResultsVisible(false);
+        setLobbyData(val || null);
+        setPlayersLocal(val?.players || {});
+
+        if (!val) {
+          setLobbyId("");
+          setPlayerId(null);
+          setIsHost(false);
+          return;
+        }
+
+        if (val.state === "playing") {
+          const idx = val.currentIndex ?? 0;
+          const list = val.vocabList || [];
+          const card = list[idx];
+
+          if (card) {
+            setVocabList(
+              list.map((v) => ({
+                ...v,
+                answered: false,
+                correct: false,
+                userAnswer: ""
+              }))
+            );
+
+            setStarted(true);
+            setDone(false);
+            setCurrentCard(card);
+
+            const germanFirst =
+              Math.random() > 0.5;
+
+            setShowGermanFirst(germanFirst);
+            setLanguageLabel(
+              germanFirst
+                ? "Deutsch → Englisch"
+                : "Englisch → Deutsch"
+            );
+
+            const deadline =
+              val.roundDeadline || 0;
+
+            setTimeLeft(
+              Math.max(
+                0,
+                Math.round(
+                  (deadline - Date.now()) / 1000
+                )
+              )
+            );
+
+            startRoundCountdown(deadline);
+            setMultiplayerResultsVisible(false);
+          }
+        }
+
+        if (val.state === "finished") {
+          setMultiplayerResultsVisible(true);
+          setStarted(false);
+          setCurrentCard(null);
+          setTimeLeft(0);
         }
       }
+    );
 
-      if (!val) {
-        setLobbyData(null);
-        setLobbyId("");
-        setPlayerId(null);
-        setIsHost(false);
-				  console.log("lost lobby");
-      }
-
-      if (val && val.state === "finished") {
-        setMultiplayerResultsVisible(true);
-        setStarted(false);
-        setCurrentCard(null);
-        setTimeLeft(0);
-      }
-    });
+    lobbyListenerRef.current = unsubscribe;
   };
 
-  // teacher (host) starts the game
   const hostStartGame = async () => {
     if (!isHost || !lobbyId) return;
+
     let list = [];
-    if (vocabList && vocabList.length > 0) {
-      list = vocabList.map(v => ({ de: v.de, en: v.en }));
-    } else if (vocabText && vocabText.trim()) {
+
+    if (vocabList.length) {
+      list = vocabList.map((v) => ({
+        de: v.de,
+        en: v.en
+      }));
+    } else if (vocabText.trim()) {
       list = parseVocab(vocabText).slice(0, 15);
     } else {
-      list = await mixSetsRandomly([selectedSet], 15);
+      list = await mixSetsRandomly(
+        [selectedSet],
+        15
+      );
     }
 
-    const lobbyRef = ref(db, `lobbies/${lobbyId}`);
-    const deadline = Date.now() + 15000; // 15s per round
-    await update(lobbyRef, {
-      vocabList: list,
-      state: "playing",
-      currentIndex: 0,
-      roundDeadline: deadline,
-      hostPlays: hostPlays,
-      bonusRoundActive: bonusRoundActive
-    });
+    if (!list.length) {
+      alert("Keine Vokabeln.");
+      return;
+    }
 
-    // reset players
-    const playersSnap = await get(ref(db, `lobbies/${lobbyId}/players`));
+    const deadline =
+      Date.now() + 15000;
+
+    await update(
+      ref(db, `lobbies/${lobbyId}`),
+      {
+        vocabList: list,
+        state: "playing",
+        currentIndex: 0,
+        roundDeadline: deadline,
+        hostPlays,
+        bonusRoundActive
+      }
+    );
+
+    const playersSnap = await get(
+      ref(db, `lobbies/${lobbyId}/players`)
+    );
+
     if (playersSnap.exists()) {
       const players = playersSnap.val();
+
       for (const pid of Object.keys(players)) {
-        await update(ref(db, `lobbies/${lobbyId}/players/${pid}`), {
-          answeredIndex: -1,
-          score: 0,
-          lastAnswer: "",
-          plays: players[pid].plays ?? true
-        });
+        await update(
+          ref(
+            db,
+            `lobbies/${lobbyId}/players/${pid}`
+          ),
+          {
+            answeredIndex: -1,
+            score: 0,
+            lastAnswer: "",
+            plays:
+              players[pid].plays ?? true
+          }
+        );
       }
     }
+
     startRoundCountdown(deadline);
     monitorAdvanceConditions(lobbyId);
   };
 
-  // submit answer to lobby 
   const submitAnswerToLobby = async (ans) => {
     if (!lobbyId || !playerId) return;
-    const lobbyRef = ref(db, `lobbies/${lobbyId}`);
-    const snap = await get(lobbyRef);
+
+    const snap = await get(
+      ref(db, `lobbies/${lobbyId}`)
+    );
+
     if (!snap.exists()) return;
+
     const lobby = snap.val();
+
     const idx = lobby.currentIndex ?? 0;
-    const current = (lobby.vocabList || [])[idx];
+    const current =
+      (lobby.vocabList || [])[idx];
+
     if (!current) return;
 
-    const playerRef = ref(db, `lobbies/${lobbyId}/players/${playerId}`);
-    const playerSnap = await get(playerRef);
-    const existing = playerSnap.exists() ? playerSnap.val() : {};
+    const playerRef = ref(
+      db,
+      `lobbies/${lobbyId}/players/${playerId}`
+    );
 
-    if ((existing.answeredIndex ?? -1) >= idx) {
-      setFeedback("Du hast diese Vokabel bereits beantwortet.");
+    const playerSnap = await get(playerRef);
+
+    const existing =
+      playerSnap.exists()
+        ? playerSnap.val()
+        : {};
+
+    if (
+      (existing.answeredIndex ?? -1) >= idx
+    ) {
+      setFeedback(
+        "Du hast diese Vokabel bereits beantwortet."
+      );
       return;
     }
 
     const userNorm = normalize(ans);
-    const validAnswers = getValidAnswers(showGermanFirst ? current.en : current.de);
-    const isSpecial = userNorm === "am";
-    const isCorrect = isSpecial || validAnswers.includes(userNorm);
+
+    const validAnswers = getValidAnswers(
+      showGermanFirst
+        ? current.en
+        : current.de
+    );
+
+    const isCorrect =
+      userNorm === "am" ||
+      validAnswers.includes(userNorm);
 
     let pointsEarned = 0;
+
     if (isCorrect) {
-      const secondsLeft = Math.max(0, Math.round((lobby.roundDeadline - Date.now()) / 1000));
-      const timeBonus = Math.round(secondsLeft * 10 / 15); // 0..10
+      const secondsLeft = Math.max(
+        0,
+        Math.round(
+          (lobby.roundDeadline - Date.now()) /
+            1000
+        )
+      );
+
+      const timeBonus = Math.round(
+        (secondsLeft * 10) / 15
+      );
+
       pointsEarned = 5 + timeBonus;
-      if (lobby.bonusRoundActive) pointsEarned += 5; // bonus round extra points
+
+      if (lobby.bonusRoundActive) {
+        pointsEarned += 5;
+      }
     }
 
-    const newScore = (existing.score || 0) + pointsEarned;
+    const newScore =
+      (existing.score || 0) +
+      pointsEarned;
 
     await update(playerRef, {
       answeredIndex: idx,
@@ -871,113 +1576,184 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
       answeredAt: Date.now()
     });
 
-    setFeedback(isCorrect ? `✅ richtig! +${pointsEarned} Punkte` : `❌ falsch`);
+    setFeedback(
+      isCorrect
+        ? `✅ richtig! +${pointsEarned} Punkte`
+        : "❌ falsch"
+    );
   };
 
-  // monitor advance conditions (host responsibility)
   const monitorAdvanceConditions = (id) => {
+    if (monitorListenerRef.current) {
+      monitorListenerRef.current();
+    }
+
     const lobbyRef = ref(db, `lobbies/${id}`);
-    onValue(lobbyRef, async (snap) => {
-      const val = snap.val();
-      if (!val) return;
-      if (val.state !== "playing") return;
 
-      const idx = val.currentIndex ?? 0;
-      const players = val.players || {};
-      const activePlayers = Object.entries(players).filter(([, p]) => p.plays !== false);
+    const unsubscribe = onValue(
+      lobbyRef,
+      async (snap) => {
+        const val = snap.val();
 
-      const allAnswered =
-        activePlayers.length > 0 &&
-        activePlayers.every(([, p]) => (p.answeredIndex ?? -1) >= idx);
+        if (!val || val.state !== "playing") {
+          return;
+        }
 
-      const now = Date.now();
-	  
+        const idx = val.currentIndex ?? 0;
 
-	        console.log("monitorAdvanceConditions");
+        const players =
+          val.players || {};
 
+        const activePlayers =
+          Object.entries(players).filter(
+            ([, p]) => p.plays !== false
+          );
 
-      if (allAnswered || (val.roundDeadline && now >= (val.roundDeadline))) 
-	  {
-        // only host should advance
-        if (val.hostId === playerId) 
-		{
-          const nextIndex = idx + 1;
-          //const total = (val.vconst roundTimerRef = useRef(null);vocabList || []).length;
-		  const total = (val.vocabList || []).length;
-          if (nextIndex >= total) {
-            await update(lobbyRef, {
-              state: "finished",
-              roundDeadline: 0
-            });
-          } else {
-            const newDeadline = Date.now() + 15000;
-            await update(lobbyRef, {
-              currentIndex: nextIndex,
-              roundDeadline: newDeadline
-            });
-            startRoundCountdown(newDeadline);
+        const allAnswered =
+          activePlayers.length > 0 &&
+          activePlayers.every(
+            ([, p]) =>
+              (p.answeredIndex ?? -1) >= idx
+          );
+
+        const now = Date.now();
+
+        if (
+          allAnswered ||
+          (val.roundDeadline &&
+            now >= val.roundDeadline)
+        ) {
+          if (val.hostId === playerId) {
+            const nextIndex = idx + 1;
+            const total =
+              (val.vocabList || []).length;
+
+            if (nextIndex >= total) {
+              await update(
+                lobbyRef,
+                {
+                  state: "finished",
+                  roundDeadline: 0
+                }
+              );
+            } else {
+              const newDeadline =
+                Date.now() + 15000;
+
+              await update(
+                lobbyRef,
+                {
+                  currentIndex: nextIndex,
+                  roundDeadline: newDeadline
+                }
+              );
+
+              startRoundCountdown(
+                newDeadline
+              );
+            }
           }
         }
-						  	  console.log("isHost2: ", isHost);
-	  console.log("autoAdvance2: ", autoAdvance);
-	  console.log("lobbyId2: ", lobbyId);
       }
-    });
+    );
+
+    monitorListenerRef.current =
+      unsubscribe;
   };
 
-  // start local countdown
   const startRoundCountdown = (deadline) => {
-  if (roundTimerRef.current) clearInterval(roundTimerRef.current);
-
-  const tick = async () => {
-    const left = Math.max(0, Math.round((deadline - Date.now()) / 1000));
-    setTimeLeft(left);
-
-    if (left <= 0) {
-		console.log("timer is 0");
+    if (roundTimerRef.current) {
       clearInterval(roundTimerRef.current);
+    }
 
-      // ⬇️ NEU: Nur Host darf weiterschalten, wenn der Timer abläuft
-	  console.log("isHost: ", isHost);
-	  console.log("autoAdvance: ", autoAdvance);
-	  console.log("lobbyId: ", lobbyId);
-      if (isHost && autoAdvance && lobbyId) 
-	  {
-        const lobbyRef = ref(db, `lobbies/${lobbyId}`);
-        const snap = await get(lobbyRef);
-				console.log("check snap");
-        if (!snap.exists()) return;
+    const tick = async () => {
+      const left = Math.max(
+        0,
+        Math.round(
+          (deadline - Date.now()) / 1000
+        )
+      );
 
-        const val = snap.val();
-        const idx = val.currentIndex ?? 0;
-        const total = (val.vocabList || []).length;
-        if (idx + 1 >= total) {
-					console.log("completed");
-          await update(lobbyRef, { state: "finished", roundDeadline: 0 });
-        } else {
-					console.log("next card");
-          const newDeadline = Date.now() + 15000;
-          await update(lobbyRef, {
-            currentIndex: idx + 1,
-            roundDeadline: newDeadline
-          });
-		              startRoundCountdown(newDeadline);
+      setTimeLeft(left);
+
+      if (left <= 0) {
+        clearInterval(roundTimerRef.current);
+
+        if (
+          isHost &&
+          autoAdvance &&
+          lobbyId
+        ) {
+          const snap = await get(
+            ref(db, `lobbies/${lobbyId}`)
+          );
+
+          if (!snap.exists()) return;
+
+          const val = snap.val();
+
+          const idx =
+            val.currentIndex ?? 0;
+
+          const total =
+            (val.vocabList || []).length;
+
+          if (idx + 1 >= total) {
+            await update(
+              ref(db, `lobbies/${lobbyId}`),
+              {
+                state: "finished",
+                roundDeadline: 0
+              }
+            );
+          } else {
+            const newDeadline =
+              Date.now() + 15000;
+
+            await update(
+              ref(db, `lobbies/${lobbyId}`),
+              {
+                currentIndex: idx + 1,
+                roundDeadline: newDeadline
+              }
+            );
+
+            startRoundCountdown(
+              newDeadline
+            );
+          }
         }
       }
-    }
+    };
+
+    tick();
+
+    roundTimerRef.current =
+      setInterval(tick, 250);
   };
 
-  tick();
-  roundTimerRef.current = setInterval(tick, 250);
-};
+  const toggleHostPlays = async (value) => {
+    setHostPlays(value);
 
-
-  const toggleHostPlays = async (val) => {
-    setHostPlays(val);
     if (!lobbyId) return;
-    await update(ref(db, `lobbies/${lobbyId}`), { hostPlays: !!val });
+
+    await update(
+      ref(db, `lobbies/${lobbyId}`),
+      {
+        hostPlays: !!value
+      }
+    );
+
     if (playerId) {
-      await update(ref(db, `lobbies/${lobbyId}/players/${playerId}`), { plays: !!val });
+      await update(
+        ref(
+          db,
+          `lobbies/${lobbyId}/players/${playerId}`
+        ),
+        {
+          plays: !!value
+        }
+      );
     }
   };
 
@@ -986,29 +1762,57 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
       setIsMultiplayerMode(false);
       setLobbyId("");
       setLobbyData(null);
-	  				console.log("leave lobby 2");
       return;
     }
-		  				console.log("leave lobby 3");
-    await remove(ref(db, `lobbies/${lobbyId}/players/${playerId}`)).catch(() => {});
+
+    await remove(
+      ref(
+        db,
+        `lobbies/${lobbyId}/players/${playerId}`
+      )
+    ).catch(() => {});
+
     if (isHost) {
-      const snap = await get(ref(db, `lobbies/${lobbyId}/players`));
+      const snap = await get(
+        ref(db, `lobbies/${lobbyId}/players`)
+      );
+
       if (snap.exists()) {
         const players = snap.val();
         const keys = Object.keys(players);
-        if (keys.length === 0) {
-          await remove(ref(db, `lobbies/${lobbyId}`));
-        } else {
+
+        if (keys.length) {
           const newHost = keys[0];
-          await update(ref(db, `lobbies/${lobbyId}`), { hostId: newHost, state: "waiting" });
-          await update(ref(db, `lobbies/${lobbyId}/players/${newHost}`), { isHost: true });
+
+          await update(
+            ref(db, `lobbies/${lobbyId}`),
+            {
+              hostId: newHost,
+              state: "waiting"
+            }
+          );
+
+          await update(
+            ref(
+              db,
+              `lobbies/${lobbyId}/players/${newHost}`
+            ),
+            {
+              isHost: true
+            }
+          );
+        } else {
+          await remove(
+            ref(db, `lobbies/${lobbyId}`)
+          );
         }
       } else {
-        await remove(ref(db, `lobbies/${lobbyId}`));
-			  				console.log("leave lobby 3");
+        await remove(
+          ref(db, `lobbies/${lobbyId}`)
+        );
       }
     }
-		  console.log("leave lobby");
+
     setIsHost(false);
     setPlayerId(null);
     setLobbyId("");
@@ -1019,77 +1823,51 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
 
   useEffect(() => {
     return () => {
-      if (roundTimerRef.current) clearInterval(roundTimerRef.current);
+      if (roundTimerRef.current) {
+        clearInterval(roundTimerRef.current);
+      }
+
+      if (lobbyListenerRef.current) {
+        lobbyListenerRef.current();
+      }
+
+      if (monitorListenerRef.current) {
+        monitorListenerRef.current();
+      }
     };
   }, []);
 
-  // ---------- UI Rendering
+  // ==========================================================
+  // LOGIN SCREEN
+  // ==========================================================
 
-  // Leaderboard (multiplayer end)
-  if (multiplayerResultsVisible && isMultiplayerMode && lobbyData) {
-    const players = lobbyData.players || {};
-    const sorted = Object.entries(players).sort((a, b) => (b[1].score || 0) - (a[1].score || 0));
+  if (authLoading) {
     return (
       <div style={styles.container}>
         <div style={styles.box}>
-          <h2>Leaderboard — Lobby {lobbyId}</h2>
-          <div style={{ textAlign: "left" }}>
-            {sorted.length === 0 ? <div>Keine Spieler</div> : sorted.map(([pid, p], i) => (
-              <div key={pid} style={{ padding: 8, borderBottom: "1px solid #eee" }}>
-                <strong>{i + 1}.</strong> {p.name} — <strong>{p.score ?? 0}</strong> Punkte {p.isHost ? "👑" : ""}
-              </div>
-            ))}
-          </div>
-
-          <div style={{ marginTop: 12 }}>
-            <button type="button" style={styles.button} onClick={() => { reset(); leaveLobby(); }}>
-              Zurück zum Menü
-            </button>
-          </div>
+          <h2>Lade...</h2>
         </div>
       </div>
     );
   }
 
-// ---------------------- RENDER LOGIC
-  if (showHomeworkLogin && !loggedIn) {
-    return (
-      <div style={styles.container}>
-        <div style={styles.box}>
-          <h2>📚 Hausaufgaben</h2>
-          <div style={{ display: "flex", justifyContent: "center", gap: 18, marginBottom: 14 }}>
-            <label><input type="radio" name="hwRole" checked={homeworkLoginRole === "student"} onChange={() => setHomeworkLoginRole("student")} /> Schüler</label>
-            <label><input type="radio" name="hwRole" checked={homeworkLoginRole === "teacher"} onChange={() => setHomeworkLoginRole("teacher")} /> Lehrer</label>
-          </div>
-          {homeworkLoginRole === "student" ? (
-            <>
-              <input type="email" placeholder="Schul-E-Mail" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} style={styles.input} />
-              <input type="password" placeholder="Passwort" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} style={styles.input} />
-            </>
-          ) : (
-            <input type="password" placeholder="Lehrer-Code" value={homeworkCode} onChange={(e) => setHomeworkCode(e.target.value)} style={styles.input} autoFocus />
-          )}
-          <div style={{ display: "flex", justifyContent: "center", gap: 8 }}>
-            <button type="button" style={styles.button} onClick={homeworkLogin}>Weiter</button>
-            <button type="button" style={{ ...styles.button, background: "#999" }} onClick={() => setShowHomeworkLogin(false)}>Abbrechen</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Option B: login is own screen shown when multiplayer clicked
   if (showLoginMenu && !loggedIn) {
     return (
       <div style={styles.container}>
         <div style={styles.box}>
-          <h2>Login für Multiplayer</h2>
+          <h2>
+            {authMode === "login"
+              ? "Einloggen"
+              : "Konto erstellen"}
+          </h2>
 
           <input
             type="email"
-            placeholder="Schul-E-Mail "
+            placeholder="Schul-E-Mail"
             value={loginEmail}
-            onChange={(e) => setLoginEmail(e.target.value)}
+            onChange={(e) =>
+              setLoginEmail(e.target.value)
+            }
             style={styles.input}
           />
 
@@ -1097,435 +1875,1739 @@ const isValidPassword = (pw) => typeof pw === "string" && /^[A-Za-z0-9]{8}$/.tes
             type="password"
             placeholder="Passwort"
             value={loginPassword}
-            onChange={(e) => setLoginPassword(e.target.value)}
+            onChange={(e) =>
+              setLoginPassword(e.target.value)
+            }
             style={styles.input}
           />
 
-          <div style={{ display: "flex", gap: 8, flexDirection: "column", alignItems: "center" }}>
-            <button style={styles.button} onClick={handleLogin}>Einloggen</button>
-            <button style={{ ...styles.button, background: "#999" }} onClick={handleCancelLogin}>Abbrechen</button>
-          </div>
+          <button
+            style={styles.button}
+            onClick={handleAuth}
+          >
+            {authMode === "login"
+              ? "Einloggen"
+              : "Konto erstellen"}
+          </button>
 
-          <p style={{ fontSize: 12, color: "#666", marginTop: 8 }}>
-            <code></code>
+          {authMode === "login" && (
+            <button
+              style={styles.button}
+              onClick={handlePasswordReset}
+            >
+              Passwort vergessen
+            </button>
+          )}
+
+          <button
+            style={{
+              ...styles.button,
+              background: "#777"
+            }}
+            onClick={() =>
+              setAuthMode(
+                authMode === "login"
+                  ? "register"
+                  : "login"
+              )
+            }
+          >
+            {authMode === "login"
+              ? "Neues Konto erstellen"
+              : "Zum Login"}
+          </button>
+
+          <button
+            style={{
+              ...styles.button,
+              background: "#999"
+            }}
+            onClick={() =>
+              setShowLoginMenu(false)
+            }
+          >
+            Abbrechen
+          </button>
+
+          <p style={styles.smallMuted}>
+            Nur @evgbm.net E-Mail-Adressen sind erlaubt.
           </p>
         </div>
       </div>
     );
   }
 
-  // Default UI
-  return (
-    <div style={styles.container}>
-	      <div style={{ position: "absolute", right: 20, top: 10, display: "flex", gap: 8, alignItems: "center" }}>
-        <button type="button" style={{ ...styles.buttonSmall, background: "#7b4de8" }} onClick={openHomework}>
-          📚 Hausaufgaben
-        </button>
-        {loggedIn && (
-          <>
-            <span style={{ marginRight: 2 }}>{multiusername}</span>
-            <button type="button" style={{ padding: "6px 10px", cursor: "pointer" }} onClick={handleLogout}>Logout</button>
-          </>
-        )}
-      </div>
-	  
-      <h2 onClick={handleTitleClick} style={{ cursor: "pointer" }}>Vokabeltrainer</h2>
+  // ==========================================================
+  // ADMIN PANEL
+  // ==========================================================
 
-      {showHomeworkPanel && loggedIn && !started && (
-        <div style={styles.box}>
-          <h3>📚 Hausaufgaben</h3>
-          {isTeacher && (
-            <div style={{ textAlign: "left", marginBottom: 14 }}>
-              <input value={homeworkTitle} onChange={(e) => setHomeworkTitle(e.target.value)} placeholder="Titel" style={styles.input} />
-              <select value={homeworkSet} onChange={(e) => setHomeworkSet(e.target.value)} style={styles.input}>
-                {Object.keys(SETS).map((key) => <option key={key} value={key}>{key}</option>)}
-              </select>
-              <input type="number" min="1" max="50" value={homeworkAmount} onChange={(e) => setHomeworkAmount(e.target.value)} placeholder="Anzahl Vokabeln" style={styles.input} />
-              <input type="date" value={homeworkDue} onChange={(e) => setHomeworkDue(e.target.value)} style={styles.input} />
-              <button type="button" style={styles.button} onClick={createHomework}>Neue Hausaufgabe erstellen</button>
+  if (adminOpen && isAdmin) {
+    const users = Object.entries(allUsers);
+
+    return (
+      <div style={styles.container}>
+        <div style={styles.wideBox}>
+          <div style={styles.adminHeader}>
+            <div>
+              <h2>🛠 Admin Panel</h2>
+              <div style={styles.smallMuted}>
+                Angemeldet als {firebaseUser.email}
+              </div>
+            </div>
+
+            <button
+              style={styles.danger}
+              onClick={() =>
+                setAdminOpen(false)
+              }
+            >
+              Schließen
+            </button>
+          </div>
+
+          <div style={styles.row}>
+            <button
+              style={{
+                ...styles.buttonSmall,
+                background:
+                  adminTab === "users"
+                    ? "#2dbe60"
+                    : "#4a6eff"
+              }}
+              onClick={() =>
+                setAdminTab("users")
+              }
+            >
+              Benutzer
+            </button>
+
+            <button
+              style={{
+                ...styles.buttonSmall,
+                background:
+                  adminTab === "homework"
+                    ? "#2dbe60"
+                    : "#4a6eff"
+              }}
+              onClick={() =>
+                setAdminTab("homework")
+              }
+            >
+              Hausaufgaben
+            </button>
+          </div>
+
+          {adminTab === "users" && (
+            <div>
+              <h3>
+                Benutzer ({users.length})
+              </h3>
+
+              {users.length === 0 && (
+                <p>Keine Benutzer gefunden.</p>
+              )}
+
+              {users.map(([uid, user]) => (
+                <div
+                  key={uid}
+                  style={styles.adminRow}
+                >
+                  <div>
+                    <strong>
+                      {user.username ||
+                        user.email}
+                    </strong>
+
+                    <br />
+
+                    <span style={styles.smallMuted}>
+                      {user.email}
+                    </span>
+
+                    <br />
+
+                    <span style={styles.badge}>
+                      {user.role ||
+                        ROLES.STUDENT}
+                    </span>
+
+                    {user.blocked && (
+                      <span
+                        style={{
+                          ...styles.badge,
+                          background: "#ffd6d6"
+                        }}
+                      >
+                        GESPERRT
+                      </span>
+                    )}
+                  </div>
+
+                  <div>
+                    <select
+                      value={
+                        user.role ||
+                        ROLES.STUDENT
+                      }
+                      onChange={(e) =>
+                        updateUserRole(
+                          uid,
+                          e.target.value
+                        )
+                      }
+                    >
+                      <option value="student">
+                        Schüler
+                      </option>
+                      <option value="teacher">
+                        Lehrer
+                      </option>
+                      <option value="host">
+                        Host
+                      </option>
+                      <option value="admin">
+                        Admin
+                      </option>
+                    </select>
+
+                    <button
+                      style={
+                        user.blocked
+                          ? styles.success
+                          : styles.danger
+                      }
+                      onClick={() =>
+                        toggleUserBlocked(
+                          uid,
+                          !!user.blocked
+                        )
+                      }
+                    >
+                      {user.blocked
+                        ? "Entsperren"
+                        : "Sperren"}
+                    </button>
+
+                    <button
+                      style={styles.orange}
+                      onClick={() =>
+                        adminPasswordReset(
+                          user.email
+                        )
+                      }
+                    >
+                      Passwort-Reset
+                    </button>
+
+                    <button
+                      style={styles.danger}
+                      onClick={() =>
+                        adminDeleteUserRecord(
+                          uid
+                        )
+                      }
+                    >
+                      Profildaten löschen
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
-          {Object.keys(homework).length === 0 ? <p style={styles.smallMuted}>Keine Hausaufgaben vorhanden.</p> : Object.values(homework).filter((hw) => hw.active !== false).map((hw) => {
-            const progress = homeworkProgress[hw.id]?.progress || 0;
-            const finished = homeworkProgress[hw.id]?.finished === true;
-            return (
-              <div key={hw.id} style={styles.card}>
-                <strong>{hw.title}</strong><br />
-                {hw.setName} · {hw.amount} Vokabeln{hw.due ? ` · Abgabe ${hw.due}` : ""}<br />
-                Fortschritt: {Math.min(progress, hw.amount)} / {hw.amount}
-                <div style={{ marginTop: 8 }}>
-                  {!finished && <button type="button" style={styles.buttonSmall} onClick={() => startHomework(hw)}>Starten</button>}
-                  {finished && <span style={{ color: "green", fontWeight: "bold" }}>✅ Erledigt</span>}
-                  {loginEmail.trim().toLowerCase() === "alexmaxi14@evgbm.net" && !finished && <button type="button" style={{ ...styles.buttonSmall, background: "#d32f2f" }} onClick={() => fakeDoHomework(hw)}>🧪 Fake Do Homework</button>}
+          {adminTab === "homework" && (
+            <div>
+              <h3>Hausaufgaben</h3>
+
+              <button
+                style={styles.success}
+                onClick={() => {
+                  setHomeworkEditor({
+                    ...defaultHomework(
+                      firebaseUser.email
+                    ),
+                    id: genHomeworkId()
+                  });
+
+                  setHomeworkEditorOpen(true);
+                }}
+              >
+                + Hausaufgabe erstellen
+              </button>
+
+              {Object.entries(allHomework).map(
+                ([id, h]) => (
+                  <div
+                    key={id}
+                    style={styles.adminRow}
+                  >
+                    <div>
+                      <strong>
+                        {h.title}
+                      </strong>
+
+                      <br />
+
+                      <span
+                        style={styles.smallMuted}
+                      >
+                        {h.amount} Vokabeln ·{" "}
+                        {h.setName}
+                      </span>
+                    </div>
+
+                    <div>
+                      <button
+                        style={styles.success}
+                        onClick={() =>
+                          simulateHomework({
+                            id,
+                            ...h
+                          })
+                        }
+                      >
+                        🧪 Simulieren
+                      </button>
+
+                      <button
+                        style={styles.orange}
+                        onClick={() => {
+                          setHomeworkEditor({
+                            id,
+                            ...h,
+                            vocabText:
+                              (h.vocab || [])
+                                .map(
+                                  (v) =>
+                                    `${v.de},${v.en}`
+                                )
+                                .join("\n")
+                          });
+
+                          setHomeworkEditorOpen(
+                            true
+                          );
+                        }}
+                      >
+                        Bearbeiten
+                      </button>
+
+                      <button
+                        style={styles.danger}
+                        onClick={() =>
+                          deleteHomework(id)
+                        }
+                      >
+                        Löschen
+                      </button>
+                    </div>
+                  </div>
+                )
+              )}
+            </div>
+          )}
+        </div>
+
+        {homeworkEditorOpen && (
+          <HomeworkEditor
+            editor={homeworkEditor}
+            setEditor={setHomeworkEditor}
+            onSave={saveHomework}
+            onCancel={() =>
+              setHomeworkEditorOpen(false)
+            }
+          />
+        )}
+      </div>
+    );
+  }
+
+  // ==========================================================
+  // MULTIPLAYER LEADERBOARD
+  // ==========================================================
+
+  if (
+    multiplayerResultsVisible &&
+    isMultiplayerMode &&
+    lobbyData
+  ) {
+    const players =
+      lobbyData.players || {};
+
+    const sorted = Object.entries(players)
+      .sort(
+        (a, b) =>
+          (b[1].score || 0) -
+          (a[1].score || 0)
+      );
+
+    return (
+      <div style={styles.container}>
+        <div style={styles.box}>
+          <h2>
+            Leaderboard — Lobby {lobbyId}
+          </h2>
+
+          {sorted.length === 0 ? (
+            <p>Keine Spieler</p>
+          ) : (
+            sorted.map(
+              ([pid, p], i) => (
+                <div
+                  key={pid}
+                  style={{
+                    padding: 8,
+                    borderBottom:
+                      "1px solid #eee",
+                    textAlign: "left"
+                  }}
+                >
+                  <strong>
+                    {i + 1}.
+                  </strong>{" "}
+                  {p.name} —{" "}
+                  <strong>
+                    {p.score || 0}
+                  </strong>{" "}
+                  Punkte{" "}
+                  {p.isHost ? "👑" : ""}
                 </div>
+              )
+            )
+          )}
+
+          <button
+            style={styles.button}
+            onClick={() => {
+              leaveLobby();
+              reset();
+            }}
+          >
+            Zurück zum Menü
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================================
+  // DEFAULT UI
+  // ==========================================================
+
+  return (
+    <div style={styles.container}>
+      <div
+        style={{
+          position: "absolute",
+          right: 20,
+          top: 10,
+          display: "flex",
+          gap: 5,
+          alignItems: "center"
+        }}
+      >
+        {loggedIn ? (
+          <>
+            <span style={styles.smallMuted}>
+              {multiusername}
+              {isAdmin ? " 👑" : ""}
+            </span>
+
+            <button
+              style={{
+                padding: "6px 10px",
+                cursor: "pointer"
+              }}
+              onClick={handleLogout}
+            >
+              Logout
+            </button>
+          </>
+        ) : null}
+      </div>
+
+      <h2
+        onClick={handleTitleClick}
+        style={{ cursor: "pointer" }}
+      >
+        Vokabeltrainer
+      </h2>
+
+      {loggedIn && (
+        <div
+          style={{
+            ...styles.smallMuted,
+            marginBottom: 10
+          }}
+        >
+          Rolle: {role}
+        </div>
+      )}
+
+      {/* ======================================================
+          HOMEWORK EDITOR
+      ====================================================== */}
+
+      {homeworkEditorOpen && (
+        <HomeworkEditor
+          editor={homeworkEditor}
+          setEditor={setHomeworkEditor}
+          onSave={saveHomework}
+          onCancel={() =>
+            setHomeworkEditorOpen(false)
+          }
+        />
+      )}
+
+      {/* ======================================================
+          HOMEWORK VIEW
+      ====================================================== */}
+
+      {homeworkView && !started && (
+        <div style={styles.wideBox}>
+          <h2>📚 Hausaufgaben</h2>
+
+          {canCreateHomework(role) && (
+            <button
+              style={styles.success}
+              onClick={openHomeworkCreator}
+            >
+              + Hausaufgabe erstellen
+            </button>
+          )}
+
+          {!homeworkList.length && (
+            <p>Keine aktiven Hausaufgaben.</p>
+          )}
+
+          {homeworkList.map((h) => {
+            const result =
+              homeworkResults[h.id];
+
+            return (
+              <div
+                key={h.id}
+                style={{
+                  padding: 12,
+                  marginBottom: 10,
+                  border:
+                    "1px solid #ddd",
+                  borderRadius: 8
+                }}
+              >
+                <h3>
+                  {h.title}
+                </h3>
+
+                <p>
+                  {h.description ||
+                    "Keine Beschreibung"}
+                </p>
+
+                <p>
+                  <strong>
+                    {h.amount}
+                  </strong>{" "}
+                  Vokabeln ·{" "}
+                  {h.pointsPerCorrect ||
+                    1}{" "}
+                  Punkt(e) pro richtig
+                </p>
+
+                {result ? (
+                  <p>
+                    ✅ Bereits erledigt:{" "}
+                    <strong>
+                      {result.score}/
+                      {result.maxScore}
+                    </strong>
+                  </p>
+                ) : (
+                  <button
+                    style={styles.buttonSmall}
+                    onClick={() =>
+                      startHomework(h)
+                    }
+                  >
+                    Hausaufgabe starten
+                  </button>
+                )}
+
+                {canCreateHomework(role) && (
+                  <>
+                    <button
+                      style={styles.orange}
+                      onClick={() => {
+                        setHomeworkEditor({
+                          ...h,
+                          vocabText:
+                            (h.vocab || [])
+                              .map(
+                                (v) =>
+                                  `${v.de},${v.en}`
+                              )
+                              .join("\n")
+                        });
+
+                        setHomeworkEditorOpen(
+                          true
+                        );
+                      }}
+                    >
+                      Bearbeiten
+                    </button>
+
+                    <button
+                      style={styles.danger}
+                      onClick={() =>
+                        deleteHomework(h.id)
+                      }
+                    >
+                      Löschen
+                    </button>
+                  </>
+                )}
+
+                {isAdmin && (
+                  <button
+                    style={styles.success}
+                    onClick={() =>
+                      simulateHomework(h)
+                    }
+                  >
+                    🧪 Admin-Test
+                  </button>
+                )}
               </div>
             );
           })}
-          <button type="button" style={{ ...styles.button, background: "#999", marginTop: 8 }} onClick={() => setShowHomeworkPanel(false)}>Schließen</button>
         </div>
       )}
 
-      {/* TOP: Name + Singleplayer controls */}
-      {!started && !isMultiplayerMode && (
-        <div style={styles.box}>
-          <input
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="Benutzername"
-            style={styles.input}
-          />
+      {/* ======================================================
+          SINGLEPLAYER MENU
+      ====================================================== */}
 
-          <select
-            value={selectedSet}
-            onChange={(e) => setSelectedSet(e.target.value)}
-            style={styles.input}
-          >
-            {Object.keys(SETS).map((key) => (
-              <option key={key} value={key}>{key}</option>
-            ))}
-          </select>
-
-          <div style={{ display: "flex", justifyContent: "center", gap: 8 }}>
-            <button type="button" style={styles.buttonSmall} onClick={addGitHubVocab}>
-              {setLoading ? "Lade..." : "Ausgewählte Vokabeln hinzufügen"}
-            </button>
-
-            <button type="button" style={styles.buttonSmall} onClick={async () => {
-              const mixed = await mixSetsRandomly([selectedSet], 5);
-              setVocabText(mixed.map(v => `${v.de},${v.en}`).join("\n"));
-              // don't immediately start — user can choose to start or edit list
-              setVocabList(mixed.slice(0,15).map(v => ({...v, answered:false, correct:false, userAnswer:""})));
-
-              alert("Mix geladen (15 Vokabeln).");
-            }}>
-              Mix laden
-            </button>
-          </div>
-
-          <textarea
-            value={vocabText}
-            onChange={(e) => setVocabText(e.target.value)}
-            placeholder="Deutsch,Englisch  — eine pro Zeile"
-            rows={6}
-            style={styles.textarea}
-          />
-
-          <div style={{ marginTop: 10 }}>
-            <button type="button" style={styles.button} onClick={() => startSession(vocabList.length ? vocabList : null)}>Start (Singleplayer)</button>
-          </div>
-        </div>
-      )}
-
-      {/* Multiplayer Lobby UI */}
-      {isMultiplayerMode && !started && (
-        <div style={styles.lobbyBox}>
-          <h3>Multiplayer Lobby</h3>
-
-          {!lobbyId && (
-            <>
-              <div style={{ display: "flex", justifyContent: "center", gap: 8, marginBottom: 8 }}>
-                <button
-                  type="button"
-                  style={styles.buttonSmall}
-                  onClick={async () => {
-                    // create lobby: if teacher logged in, no prompt, else prompt inside createLobby
-                    let list = [];
-                    if (vocabList && vocabList.length > 0) list = vocabList.map(v => ({ de: v.de, en: v.en }));
-                    else if (vocabText && vocabText.trim()) list = parseVocab(vocabText).slice(0, 15);
-                    else list = await mixSetsRandomly([selectedSet], 15);
-                    await createLobby(list);
-                  }}
-                >
-                  Lobby erstellen (Lehrer)
-                </button>
-
-                <input
-                  type="text"
-                  placeholder="Lobby-ID eingeben"
-                  style={{ ...styles.input, width: "200px" }}
-                  value={joinLobbyId}
-                  onChange={(e) => setJoinLobbyId(e.target.value.toUpperCase())}
-                />
-
-                <button
-                  type="button"
-                  style={styles.buttonSmall}
-                  onClick={() => joinLobby(joinLobbyId)}
-                >
-                  Beitreten
-                </button>
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "center", gap: 8, marginBottom: 8 }}>
-                {!isTeacher ? (
-                  <button style={{ ...styles.buttonSmall, background: "#2dbe60" }} onClick={() => {
-                    const pw = prompt("Lehrer-Passwort eingeben:");
-                    if (pw === TEACHER_PASSWORD) {
-                      setIsTeacher(true);
-                      alert("Lehrer eingeloggt.");
-                    } else {
-                      alert("Falsches Passwort.");
-                    }
-                  }}>Als Lehrer einloggen</button>
-                ) : (
-                  <div style={styles.smallMuted}>Lehrer eingeloggt ✅</div>
-                )}
-
-                <div style={styles.smallMuted}>Tipp: Lehrer braucht Passwort, um Lobby zu erstellen.</div>
-              </div>
-
-              <p style={{ fontSize: "12px", color: "#333" }}>
-                Nur Lehrer kann Lobbys erstellen (Lehrer-Passwort erforderlich). Schüler können beitreten.
-              </p>
-            </>
-          )}
-
-          {lobbyId && lobbyData && (
-            <>
-              <p><b>Lobby:</b> {lobbyId}</p>
-              <p><b>Status:</b> {lobbyData.state}</p>
-
-              <h4>Spieler</h4>
-              <div style={styles.playersList}>
-                {lobbyData.players
-                  ? Object.entries(lobbyData.players).map(([pid, p]) => (
-                      <div key={pid} style={{ padding: 6, borderBottom: "1px solid #eee" }}>
-                        {p.isHost ? "👑 " : ""}{p.name} — {p.score ?? 0} {p.plays === false ? "(Zuschauer)" : ""} {pid === playerId ? " (du)" : ""}
-                      </div>
-                    ))
-                  : <div>Keine Spieler</div>}
-              </div>
-
-              {/* Lehrer-Controls */}
-              {isHost && (
-                <div style={{ marginTop: 12 }}>
-                  <div style={{ display: "flex", gap: 8, justifyContent: "space-between", alignItems: "center" }}>
-                    <label>
-                      <input type="checkbox" checked={hostPlays} onChange={(e) => toggleHostPlays(e.target.checked)} /> Host spielt mit
-                    </label>
-
-                    <label>
-                      <input type="checkbox" checked={bonusRoundActive} onChange={(e) => setBonusRoundActive(e.target.checked)} /> Bonusrunde
-                    </label>
-
-                    <label title="Auto-Advance: Wenn alle Antworten oder Zeit abgelaufen, geht's automatisch weiter">
-                      <input type="checkbox" checked={autoAdvance} onChange={(e) => setAutoAdvance(e.target.checked)} /> Auto-Advance
-                    </label>
-                  </div>
-
-                  <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
-                    <button
-                      type="button"
-                      style={styles.button}
-                      onClick={() => hostStartGame()}
-                      disabled={!(hostPlays || Object.values(lobbyData.players || {}).filter(p => !p.isHost).length > 0)}
-                    >
-                      Spiel starten
-                    </button>
-
-                    <button type="button" style={{ ...styles.buttonSmall, background: "#999" }} onClick={() => leaveLobby()}>
-                      Lobby verlassen
-                    </button>
-
-                    <button
-                      type="button"
-                      style={{ ...styles.buttonSmall, background: "#f39c12" }}
-                      onClick={async () => {
-                        // Manuelles Vorwärts (nur Host)
-                        if (!lobbyId) return;
-                        const snap = await get(ref(db, `lobbies/${lobbyId}`));
-                        if (!snap.exists()) return;
-                        const val = snap.val();
-                        if (val.state !== "playing") return alert("Spiel ist nicht aktiv.");
-                        const nextIndex = (val.currentIndex ?? 0) + 1;
-                        const total = (val.vocabList || []).length;
-                        if (nextIndex >= total) {
-                          await update(ref(db, `lobbies/${lobbyId}`), { state: "finished", roundDeadline: 0 });
-                        } else {
-                          const newDeadline = Date.now() + 15000;
-                          await update(ref(db, `lobbies/${lobbyId}`), { currentIndex: nextIndex, roundDeadline: newDeadline });
-                          startRoundCountdown(newDeadline);
-                        }
-                      }}
-                    >
-                      Nächste Frage
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Nicht-Host: Leave */}
-              {!isHost && (
-                <div style={{ marginTop: 10 }}>
-                  <button type="button" style={styles.buttonSmall} onClick={() => leaveLobby()}>Lobby verlassen</button>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
-      {/* In-game UI */}
-      {started && currentCard && !done && (
-        <AnimatePresence exitBeforeEnter>
-          <motion.div
-            key={currentCard.de + (isMultiplayerMode ? `_${lobbyId}_${lobbyData?.currentIndex}` : "")}
-            style={styles.box}
-            initial={{ y: -300, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 300, opacity: 0 }}
-            transition={{ type: "spring", stiffness: 300, damping: 30 }}
-          >
-            <h4>{languageLabel}</h4>
-            <h3>{showGermanFirst ? currentCard.de : currentCard.en}</h3>
-
-            {isMultiplayerMode && (
-              <div style={{ marginBottom: 8 }}>
-                <b>Runde:</b> {(lobbyData?.currentIndex ?? 0) + 1} / {(lobbyData?.vocabList?.length ?? vocabList.length)}
-                <br />
-                <b>Zeit:</b> {timeLeft}s
-              </div>
-            )}
-
+      {!started &&
+        !isMultiplayerMode &&
+        !homeworkView && (
+          <div style={styles.box}>
             <input
               type="text"
-              value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  if (isMultiplayerMode) submitAnswerToLobby(answer);
-                  else checkAnswer();
-                  setAnswer("");
-                }
-              }}
+              value={username}
+              onChange={(e) =>
+                setUsername(e.target.value)
+              }
+              placeholder="Benutzername"
               style={styles.input}
             />
 
-            <div>
+            <select
+              value={selectedSet}
+              onChange={(e) =>
+                setSelectedSet(e.target.value)
+              }
+              style={styles.input}
+            >
+              {Object.keys(SETS).map(
+                (key) => (
+                  <option
+                    key={key}
+                    value={key}
+                  >
+                    {key}
+                  </option>
+                )
+              )}
+            </select>
+
+            <div style={styles.row}>
               <button
                 type="button"
+                style={styles.buttonSmall}
+                onClick={
+                  addGitHubVocab
+                }
+              >
+                {setLoading
+                  ? "Lade..."
+                  : "Set hinzufügen"}
+              </button>
+
+              <button
+                type="button"
+                style={
+                  styles.buttonSmall
+                }
+                onClick={async () => {
+                  const mixed =
+                    await mixSetsRandomly(
+                      [selectedSet],
+                      5
+                    );
+
+                  setVocabText(
+                    mixed
+                      .map(
+                        (v) =>
+                          `${v.de},${v.en}`
+                      )
+                      .join("\n")
+                  );
+
+                  setVocabList(
+                    mixed
+                      .slice(0, 15)
+                      .map((v) => ({
+                        ...v,
+                        answered: false,
+                        correct: false,
+                        userAnswer: ""
+                      }))
+                  );
+                }}
+              >
+                Mix laden
+              </button>
+            </div>
+
+            <textarea
+              value={vocabText}
+              onChange={(e) =>
+                setVocabText(
+                  e.target.value
+                )
+              }
+              placeholder="Deutsch,Englisch — eine pro Zeile"
+              rows={6}
+              style={styles.textarea}
+            />
+
+            <button
+              type="button"
+              style={styles.button}
+              onClick={() =>
+                startSession(
+                  vocabList.length
+                    ? vocabList
+                    : null
+                )
+              }
+            >
+              Start
+            </button>
+
+            <button
+              type="button"
+              style={styles.button}
+              onClick={() => {
+                if (!loggedIn) {
+                  setShowLoginMenu(true);
+                  return;
+                }
+
+                setHomeworkView(true);
+              }}
+            >
+              📚 Hausaufgaben
+            </button>
+
+            {!loggedIn && (
+              <button
+                type="button"
+                style={styles.button}
+                onClick={() =>
+                  setShowLoginMenu(true)
+                }
+              >
+                Account / Login
+              </button>
+            )}
+
+            {isAdmin && (
+              <button
+                type="button"
+                style={{
+                  ...styles.button,
+                  background: "#222"
+                }}
+                onClick={() =>
+                  setAdminOpen(true)
+                }
+              >
+                🛠 Admin Panel
+              </button>
+            )}
+          </div>
+        )}
+
+      {/* ======================================================
+          MULTIPLAYER LOBBY
+      ====================================================== */}
+
+      {isMultiplayerMode &&
+        !started && (
+          <div style={styles.lobbyBox}>
+            <h3>
+              Multiplayer Lobby
+            </h3>
+
+            {!lobbyId && (
+              <>
+                {canCreateHomework(
+                  role
+                ) && (
+                  <button
+                    style={styles.button}
+                    onClick={async () => {
+                      let list = [];
+
+                      if (
+                        vocabList.length
+                      ) {
+                        list =
+                          vocabList.map(
+                            (v) => ({
+                              de: v.de,
+                              en: v.en
+                            })
+                          );
+                      } else if (
+                        vocabText.trim()
+                      ) {
+                        list =
+                          parseVocab(
+                            vocabText
+                          ).slice(
+                            0,
+                            15
+                          );
+                      } else {
+                        list =
+                          await mixSetsRandomly(
+                            [selectedSet],
+                            15
+                          );
+                      }
+
+                      await createLobby(
+                        list
+                      );
+                    }}
+                  >
+                    Lobby erstellen
+                  </button>
+                )}
+
+                <input
+                  type="text"
+                  placeholder="Lobby-ID"
+                  style={{
+                    ...styles.input,
+                    width: 200
+                  }}
+                  value={
+                    joinLobbyId
+                  }
+                  onChange={(e) =>
+                    setJoinLobbyId(
+                      e.target.value.toUpperCase()
+                    )
+                  }
+                />
+
+                <button
+                  style={
+                    styles.buttonSmall
+                  }
+                  onClick={() =>
+                    joinLobby(
+                      joinLobbyId
+                    )
+                  }
+                >
+                  Beitreten
+                </button>
+
+                {!canCreateHomework(
+                  role
+                ) && (
+                  <p style={styles.smallMuted}>
+                    Schüler können
+                    bestehenden Lobbys
+                    beitreten.
+                  </p>
+                )}
+              </>
+            )}
+
+            {lobbyId &&
+              lobbyData && (
+                <>
+                  <p>
+                    <b>Lobby:</b>{" "}
+                    {lobbyId}
+                  </p>
+
+                  <p>
+                    <b>Status:</b>{" "}
+                    {
+                      lobbyData.state
+                    }
+                  </p>
+
+                  <h4>
+                    Spieler
+                  </h4>
+
+                  <div
+                    style={
+                      styles.playersList
+                    }
+                  >
+                    {Object.entries(
+                      lobbyData.players ||
+                        {}
+                    ).map(
+                      ([pid, p]) => (
+                        <div
+                          key={pid}
+                          style={{
+                            padding: 6,
+                            borderBottom:
+                              "1px solid #eee"
+                          }}
+                        >
+                          {p.isHost
+                            ? "👑 "
+                            : ""}
+                          {p.name} —{" "}
+                          {p.score ||
+                            0}{" "}
+                          Punkte{" "}
+                          {p.plays ===
+                          false
+                            ? "(Zuschauer)"
+                            : ""}
+
+                          {pid ===
+                          playerId
+                            ? " (du)"
+                            : ""}
+                        </div>
+                      )
+                    )}
+                  </div>
+
+                  {isHost && (
+                    <div
+                      style={{
+                        marginTop: 12
+                      }}
+                    >
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={
+                            hostPlays
+                          }
+                          onChange={(e) =>
+                            toggleHostPlays(
+                              e.target
+                                .checked
+                            )
+                          }
+                        />{" "}
+                        Host spielt mit
+                      </label>
+
+                      <br />
+
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={
+                            bonusRoundActive
+                          }
+                          onChange={(e) =>
+                            setBonusRoundActive(
+                              e.target
+                                .checked
+                            )
+                          }
+                        />{" "}
+                        Bonusrunde
+                      </label>
+
+                      <br />
+
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={
+                            autoAdvance
+                          }
+                          onChange={(e) =>
+                            setAutoAdvance(
+                              e.target
+                                .checked
+                            )
+                          }
+                        />{" "}
+                        Auto-Advance
+                      </label>
+
+                      <button
+                        style={
+                          styles.button
+                        }
+                        onClick={
+                          hostStartGame
+                        }
+                      >
+                        Spiel starten
+                      </button>
+
+                      <button
+                        style={
+                          styles.orange
+                        }
+                        onClick={async () => {
+                          const snap =
+                            await get(
+                              ref(
+                                db,
+                                `lobbies/${lobbyId}`
+                              )
+                            );
+
+                          if (
+                            !snap.exists()
+                          )
+                            return;
+
+                          const val =
+                            snap.val();
+
+                          const nextIndex =
+                            (val.currentIndex ||
+                              0) + 1;
+
+                          const total =
+                            (
+                              val.vocabList ||
+                              []
+                            ).length;
+
+                          if (
+                            nextIndex >=
+                            total
+                          ) {
+                            await update(
+                              ref(
+                                db,
+                                `lobbies/${lobbyId}`
+                              ),
+                              {
+                                state:
+                                  "finished",
+                                roundDeadline: 0
+                              }
+                            );
+                          } else {
+                            const deadline =
+                              Date.now() +
+                              15000;
+
+                            await update(
+                              ref(
+                                db,
+                                `lobbies/${lobbyId}`
+                              ),
+                              {
+                                currentIndex:
+                                  nextIndex,
+                                roundDeadline:
+                                  deadline
+                              }
+                            );
+                          }
+                        }}
+                      >
+                        Nächste Frage
+                      </button>
+                    </div>
+                  )}
+
+                  <button
+                    style={
+                      styles.buttonSmall
+                    }
+                    onClick={
+                      leaveLobby
+                    }
+                  >
+                    Lobby verlassen
+                  </button>
+                </>
+              )}
+          </div>
+        )}
+
+      {/* ======================================================
+          GAME
+      ====================================================== */}
+
+      {started &&
+        currentCard &&
+        !done && (
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={
+                currentCard.de +
+                (isMultiplayerMode
+                  ? `_${lobbyId}_${lobbyData?.currentIndex}`
+                  : "")
+              }
+              style={styles.box}
+              initial={{
+                y: -100,
+                opacity: 0
+              }}
+              animate={{
+                y: 0,
+                opacity: 1
+              }}
+              exit={{
+                y: 100,
+                opacity: 0
+              }}
+              transition={{
+                type: "spring",
+                stiffness: 300,
+                damping: 30
+              }}
+            >
+              <h4>
+                {activeHomework
+                  ? activeHomework.title
+                  : languageLabel}
+              </h4>
+
+              <p>
+                {activeHomework
+                  ? languageLabel
+                  : ""}
+              </p>
+
+              <h3>
+                {showGermanFirst
+                  ? currentCard.de
+                  : currentCard.en}
+              </h3>
+
+              {isMultiplayerMode && (
+                <div>
+                  <b>
+                    Runde:
+                  </b>{" "}
+                  {(lobbyData?.currentIndex ||
+                    0) + 1}{" "}
+                  /{" "}
+                  {(
+                    lobbyData?.vocabList ||
+                    []
+                  ).length}
+
+                  <br />
+
+                  <b>
+                    Zeit:
+                  </b>{" "}
+                  {timeLeft}s
+                </div>
+              )}
+
+              {activeHomework &&
+                activeHomework.timeLimit >
+                  0 && (
+                  <p>
+                    Zeitlimit:{" "}
+                    {
+                      activeHomework.timeLimit
+                    }{" "}
+                    Sekunden
+                  </p>
+                )}
+
+              <input
+                type="text"
+                autoFocus
+                value={answer}
+                onChange={(e) =>
+                  setAnswer(
+                    e.target.value
+                  )
+                }
+                onKeyDown={(e) => {
+                  if (
+                    e.key === "Enter"
+                  ) {
+                    if (
+                      isMultiplayerMode
+                    ) {
+                      submitAnswerToLobby(
+                        answer
+                      );
+                      setAnswer("");
+                    } else {
+                      checkAnswer();
+                    }
+                  }
+                }}
+                style={styles.input}
+              />
+
+              <button
+                style={styles.button}
                 onClick={() => {
-                  if (isMultiplayerMode) {
-                    submitAnswerToLobby(answer);
+                  if (
+                    isMultiplayerMode
+                  ) {
+                    submitAnswerToLobby(
+                      answer
+                    );
                     setAnswer("");
                   } else {
                     checkAnswer();
                   }
                 }}
-                style={styles.button}
               >
                 OK
               </button>
+
+              <p>{feedback}</p>
+
+              <motion.p
+                style={{
+                  fontSize: 20,
+                  fontWeight: "bold"
+                }}
+                key={
+                  `score_${displayScore}`
+                }
+                initial={{
+                  y: -30,
+                  opacity: 0
+                }}
+                animate={{
+                  y: 0,
+                  opacity: 1
+                }}
+              >
+                Punkte:{" "}
+                {displayScore}
+              </motion.p>
+
+              {isMultiplayerMode && (
+                <div
+                  style={{
+                    textAlign:
+                      "left",
+                    marginTop: 10
+                  }}
+                >
+                  <b>
+                    Spieler:
+                  </b>
+
+                  {Object.entries(
+                    playersLocal
+                  ).map(
+                    ([pid, p]) => (
+                      <div
+                        key={pid}
+                        style={{
+                          padding: 5
+                        }}
+                      >
+                        {p.isHost
+                          ? "👑 "
+                          : ""}
+                        {p.name} —{" "}
+                        {p.score ||
+                          0}{" "}
+                        {pid ===
+                        playerId
+                          ? "(du)"
+                          : ""}
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
+            </motion.div>
+          </AnimatePresence>
+        )}
+
+      {/* ======================================================
+          RESULTS
+      ====================================================== */}
+
+      {!isMultiplayerMode &&
+        done && (
+          <div style={styles.box}>
+            <h3>
+              Ergebnisse
+            </h3>
+
+            <AnimatePresence>
+              {showEmoji && (
+                <motion.div
+                  initial={{
+                    scale: 0.5,
+                    opacity: 0
+                  }}
+                  animate={{
+                    scale: 1,
+                    opacity: 1
+                  }}
+                  transition={{
+                    duration: 0.8
+                  }}
+                  style={{
+                    fontSize: 80
+                  }}
+                >
+                  {getEmoji()}
+
+                  <p
+                    style={{
+                      fontSize: 32,
+                      fontWeight:
+                        "bold"
+                    }}
+                  >
+                    Punkte:{" "}
+                    {displayScore}
+                  </p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <div
+              id="flashcards"
+              style={
+                styles.flashcards
+              }
+            >
+              {vocabList.map(
+                (v, i) => (
+                  <div
+                    key={i}
+                    style={styles.card}
+                  >
+                    <b>
+                      DE:
+                    </b>{" "}
+                    {v.de}
+                    <br />
+
+                    <b>
+                      EN:
+                    </b>{" "}
+                    {v.en}
+                    <br />
+
+                    <b>
+                      Antwort:
+                    </b>{" "}
+                    {v.userAnswer ||
+                      ""}{" "}
+                    {v.correct
+                      ? "✅"
+                      : "❌"}
+                  </div>
+                )
+              )}
             </div>
 
-            <p>{feedback}</p>
-
-            <motion.p
-              style={{ fontSize: "20px", fontWeight: "bold" }}
-              key={`live_score_${displayScore}`}
-              initial={{ y: -50, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 50, opacity: 0 }}
-              transition={{ duration: 0.5 }}
+            <button
+              style={
+                styles.buttonSmall
+              }
+              onClick={
+                exportPDF
+              }
             >
-              Punkte: {displayScore}
-            </motion.p>
+              PDF
+            </button>
 
-            {isMultiplayerMode && lobbyData && (
-              <div style={{ textAlign: "left", marginTop: 10 }}>
-                <b>Spieler-Status:</b>
-                <div style={{ maxHeight: 120, overflowY: "auto" }}>
-                  {Object.entries(playersLocal).map(([pid, p]) => (
-                    <div key={pid} style={{ padding: 6 }}>
-                      {p.isHost ? "👑 " : ""}{p.name} — {p.score ?? 0} — { (p.answeredIndex ?? -1) >= (lobbyData.currentIndex ?? 0) ? "✅ beantwortet" : "⏳ wartet" } {pid === playerId ? "(du)" : ""}
-                    </div>
-                  ))}
-                </div>
-              </div>
+            <button
+              style={
+                styles.buttonSmall
+              }
+              onClick={
+                reset
+              }
+            >
+              Neue Runde
+            </button>
+
+            {activeHomework && (
+              <p>
+                Hausaufgabe
+                abgeschlossen:
+                <br />
+                <strong>
+                  {
+                    activeHomework.title
+                  }
+                </strong>
+              </p>
             )}
-          </motion.div>
-        </AnimatePresence>
-      )}
-
-      {/* Results / Leaderboard for singleplayer */}
-      {(!isMultiplayerMode && done) && (
-        <div style={styles.box}>
-          <h3>Ergebnisse</h3>
-
-          <AnimatePresence>
-            {showEmoji && (
-              <motion.div
-                initial={{ scale: 3, opacity: 0 }}
-                animate={ emojiAnimating ? { scale: [0.6, 1.15, 1], opacity: 1 } : { scale: 1, opacity: 1 } }
-                exit={{ opacity: 0 }}
-                transition={{ duration: emojiAnimating ? 1.0 : 0.4, times: [0, 0.6, 1] }}
-                style={{ fontSize: "80px", textAlign: "center", margin: "10px auto" }}
-              >
-                {getEmoji()}
-
-                {/* Final score — will be animated via displayScore state after smiley animation */}
-                <motion.p
-                  style={{ fontSize: "32px", fontWeight: "bold", marginTop: "10px" }}
-                  initial={{ y: -20, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ duration: 0.6, delay: emojiAnimating ? 0.8 : 0 }}
-                >
-                  Punkte: {displayScore}
-                </motion.p>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          <div id="flashcards" style={styles.flashcards}>
-            {vocabList.map((v, i) => (
-              <div key={i} style={styles.card}>
-                <b>DE:</b> {v.de}<br />
-                <b>EN:</b> {v.en}<br />
-                <b>Antwort:</b> {v.userAnswer ?? ""} {v.correct ? "✅" : "❌"}
-              </div>
-            ))}
           </div>
+        )}
 
-          <div style={{ display: "flex", gap: 8, justifyContent: "center", marginBottom: 8 }}>
-            <button type="button" onClick={exportPDF} style={styles.buttonSmall}>PDF</button>
-            <button type="button" onClick={() => { reset(); }} style={styles.buttonSmall}>Neue Runde</button>
-          </div>
+      {/* ======================================================
+          BOTTOM BAR
+      ====================================================== */}
 
-          {/* Benutzername-Motivation (shows after smiley too; we show it always here but user sees it after smiley + countup) */}
-          {username && (
-            <p style={{ marginTop: "10px", fontWeight: "bold", fontSize: "16px" }}>
-              Gut gemacht, {username}!
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* Bottom bar: open multiplayer */}
-      <div style={styles.bottomBar}>
+      <div
+        style={
+          styles.bottomBar
+        }
+      >
         <button
           type="button"
-          //onClick={() => {
-            //setIsMultiplayerMode(true);
-          //}}
-		  onClick={openMultiplayer}
-          style={{ ...styles.buttonSmall, width: 200 }}
+          style={{
+            ...styles.buttonSmall,
+            width: 160
+          }}
+          onClick={
+            openMultiplayer
+          }
         >
           Multiplayer
         </button>
 
+        {loggedIn && (
+          <button
+            type="button"
+            style={{
+              ...styles.buttonSmall,
+              width: 150
+            }}
+            onClick={() => {
+              setHomeworkView(
+                (v) => !v
+              );
+              setStarted(false);
+            }}
+          >
+            Hausaufgaben
+          </button>
+        )}
+
+        {isAdmin && (
+          <button
+            type="button"
+            style={{
+              ...styles.buttonSmall,
+              width: 130,
+              background: "#222"
+            }}
+            onClick={() =>
+              setAdminOpen(true)
+            }
+          >
+            Admin
+          </button>
+        )}
+
         <button
           type="button"
+          style={{
+            ...styles.buttonSmall,
+            width: 100,
+            background: "#999"
+          }}
           onClick={() => {
-            // quick switch: back to singleplayer menu
-            setIsMultiplayerMode(false);
+            reset();
+            setIsMultiplayerMode(
+              false
+            );
+            setHomeworkView(
+              false
+            );
             setLobbyId("");
             setLobbyData(null);
           }}
-          style={{ ...styles.buttonSmall, width: 120, background: "#999" }}
         >
           Menü
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// HOMEWORK EDITOR
+// ============================================================
+
+function HomeworkEditor({
+  editor,
+  setEditor,
+  onSave,
+  onCancel
+}) {
+  const change = (key, value) => {
+    setEditor((prev) => ({
+      ...prev,
+      [key]: value
+    }));
+  };
+
+  return (
+    <div
+      style={{
+        ...styles.wideBox,
+        textAlign: "left"
+      }}
+    >
+      <h2>
+        📝 Hausaufgabe bearbeiten
+      </h2>
+
+      <label>
+        Titel
+      </label>
+
+      <br />
+
+      <input
+        style={styles.input}
+        value={editor.title || ""}
+        onChange={(e) =>
+          change(
+            "title",
+            e.target.value
+          )
+        }
+      />
+
+      <br />
+
+      <label>
+        Beschreibung
+      </label>
+
+      <br />
+
+      <textarea
+        style={styles.textarea}
+        rows={3}
+        value={
+          editor.description || ""
+        }
+        onChange={(e) =>
+          change(
+            "description",
+            e.target.value
+          )
+        }
+      />
+
+      <br />
+
+      <label>
+        Anzahl Vokabeln
+      </label>
+
+      <br />
+
+      <input
+        type="number"
+        min="1"
+        max="100"
+        style={styles.input}
+        value={
+          editor.amount || 3
+        }
+        onChange={(e) =>
+          change(
+            "amount",
+            Number(e.target.value)
+          )
+        }
+      />
+
+      <br />
+
+      <label>
+        Vokabelset
+      </label>
+
+      <br />
+
+      <select
+        style={styles.input}
+        value={
+          editor.setName ||
+          "Unit 2"
+        }
+        onChange={(e) =>
+          change(
+            "setName",
+            e.target.value
+          )
+        }
+      >
+        {Object.keys(SETS).map(
+          (name) => (
+            <option
+              key={name}
+              value={name}
+            >
+              {name}
+            </option>
+          )
+        )}
+      </select>
+
+      <br />
+
+      <label>
+        Eigene Vokabeln
+      </label>
+
+      <br />
+
+      <textarea
+        style={{
+          ...styles.textarea,
+          width: "100%"
+        }}
+        rows={8}
+        placeholder="Deutsch,Englisch"
+        value={
+          editor.vocabText || ""
+        }
+        onChange={(e) =>
+          change(
+            "vocabText",
+            e.target.value
+          )
+        }
+      />
+
+      <br />
+
+      <label>
+        Zeitlimit pro Aufgabe
+        (0 = kein Limit)
+      </label>
+
+      <br />
+
+      <input
+        type="number"
+        min="0"
+        style={styles.input}
+        value={
+          editor.timeLimit || 0
+        }
+        onChange={(e) =>
+          change(
+            "timeLimit",
+            Number(
+              e.target.value
+            )
+          )
+        }
+      />
+
+      <br />
+
+      <label>
+        Punkte pro richtiger
+        Antwort
+      </label>
+
+      <br />
+
+      <input
+        type="number"
+        min="1"
+        style={styles.input}
+        value={
+          editor.pointsPerCorrect ||
+          1
+        }
+        onChange={(e) =>
+          change(
+            "pointsPerCorrect",
+            Number(
+              e.target.value
+            )
+          )
+        }
+      />
+
+      <br />
+
+      <label>
+        <input
+          type="checkbox"
+          checked={
+            editor.shuffle !== false
+          }
+          onChange={(e) =>
+            change(
+              "shuffle",
+              e.target.checked
+            )
+          }
+        />{" "}
+        Vokabeln mischen
+      </label>
+
+      <br />
+
+      <label>
+        <input
+          type="checkbox"
+          checked={
+            editor.allowRetry !==
+            false
+          }
+          onChange={(e) =>
+            change(
+              "allowRetry",
+              e.target.checked
+            )
+          }
+        />{" "}
+        Wiederholung erlauben
+      </label>
+
+      <div
+        style={{
+          marginTop: 15
+        }}
+      >
+        <button
+          style={styles.success}
+          onClick={onSave}
+        >
+          Speichern
+        </button>
+
+        <button
+          style={styles.danger}
+          onClick={onCancel}
+        >
+          Abbrechen
         </button>
       </div>
     </div>
