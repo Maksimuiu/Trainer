@@ -40,7 +40,7 @@ import {
 // ============================================================
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAhvwwaUR4B9dFtTclXyt8Tdq0b3x76UI",
+  apiKey: "AIzaSyAhvwwaURB4D9aFtTclXyt8Tdq0b3x76UI",
   authDomain: "vokabelnenglish.firebaseapp.com",
   databaseURL: "https://vokabelnenglish-default-rtdb.firebaseio.com",
   projectId: "vokabelnenglish",
