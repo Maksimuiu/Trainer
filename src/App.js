@@ -348,7 +348,7 @@ export default function App() {
   const [titleClicks, setTitleClicks] = useState(0);
   const [pendingBonusPoints, setPendingBonusPoints] = useState(0);
   const [showEmoji, setShowEmoji] = useState(false);
-  const [emojiAnimating, setEmojiAnimating] = useState(false);
+  const [, setEmojiAnimating] = useState(false);
   const [setLoading, setSetLoading] = useState(false);
 
   // ----------------------------------------------------------
@@ -638,27 +638,7 @@ export default function App() {
   // VOCAB
   // ==========================================================
 
-  const addVocabFromInput = () => {
-    const parsed = parseVocab(vocabText);
-
-    if (parsed.length === 0) {
-      alert("Bitte Deutsch,Englisch eingeben.");
-      return;
-    }
-
-    const prepared = parsed
-      .map((v) => ({
-        ...v,
-        answered: false,
-        correct: false,
-        userAnswer: ""
-      }))
-      .slice(0, 50);
-
-    setVocabList(prepared);
-    alert(`Hinzugefügt: ${prepared.length} Vokabeln.`);
-  };
-
+ 
   const mixSetsRandomly = async (setNames, amountPerSet = 5) => {
     if (setNames.includes("random")) {
       setNames = Object.keys(SETS).filter((s) => SETS[s] !== "random");
@@ -1062,15 +1042,7 @@ export default function App() {
     await remove(ref(db, `homework/${id}`));
   };
 
-  const toggleHomework = async (id, active) => {
-    if (!canCreateHomework(role)) return;
-
-    await update(
-      ref(db, `homework/${id}`),
-      { active: !active }
-    );
-  };
-
+ 
   // ==========================================================
   // HOMEWORK PLAY
   // ==========================================================
